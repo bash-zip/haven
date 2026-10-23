@@ -1,0 +1,485 @@
+using System.Diagnostics;
+using System.Text.Json;
+using System.Windows;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Win32;
+
+namespace Haven;
+
+/// <summary>
+/// Request/response channel between one web layer and Windows. The page posts
+/// <c>{ id, type, args }</c>; we answer with <c>{ id, result | error }</c>.
+/// Unsolicited notifications go out as <c>{ event, data }</c>.
+/// </summary>
+sealed class Bridge
+{
+    static readonly Dictionary<string, string> SettingsPages = new()
+    {
+        ["network"] = "ms-settings:network",
+        ["bluetooth"] = "ms-settings:bluetooth",
+        ["sound"] = "ms-settings:sound",
+        ["display"] = "ms-settings:display",
+        ["notifications"] = "ms-settings:notifications",
+        ["personalization"] = "ms-settings:personalization",
+        ["mouse"] = "ms-settings:mousetouchpad",
+        ["keyboard"] = "ms-settings:typing",
+        ["accessibility"] = "ms-settings:easeofaccess",
+        ["language"] = "ms-settings:regionlanguage",
+        ["power"] = "ms-settings:powersleep",
+        ["accounts"] = "ms-settings:yourinfo",
+        ["touchpad"] = "ms-settings:devices-touchpad",
+        ["windows"] = "ms-settings:",
+    };
+
+    readonly ShellHost _host;
+    readonly string _part;
+    readonly CoreWebView2 _core;
+
+    public Bridge(ShellHost host, string part, CoreWebView2 core)
+    {
+        _host = host;
+        _part = part;
+        _core = core;
+    }
+
+    public void Emit(string name, object? data = null) =>
+        _core.PostWebMessageAsJson(JsonSerializer.Serialize(new { @event = name, data }, Json.Options));
+
+    public async void OnMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        int id = 0;
+        object? result = null;
+        string? error = null;
+        try
+        {
+            using var doc = JsonDocument.Parse(e.WebMessageAsJson);
+            var root = doc.RootElement;
+            id = root.GetProperty("id").GetInt32();
+            var type = root.GetProperty("type").GetString() ?? "";
+            var args = root.TryGetProperty("args", out var a) ? a.Clone() : default;
+            // Files dropped on the page arrive alongside the message (with their real paths).
+            var files = e.AdditionalObjects?.OfType<CoreWebView2File>().Select(f => f.Path).ToList() ?? new List<string>();
+            result = await HandleAsync(type, args, files);
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        _core.PostWebMessageAsJson(JsonSerializer.Serialize(new { id, result, error }, Json.Options));
+    }
+
+    async Task<object?> HandleAsync(string type, JsonElement args, List<string> files)
+    {
+        switch (type)
+        {
+            // ----- Environment -----
+            case "env":
+                var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                return new
+                {
+                    part = _part,
+                    user = Environment.UserName,
+                    downloads = Path.Combine(profile, "Downloads"),
+                    documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+                    pictures = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+                    version = typeof(Bridge).Assembly.GetName().Version?.ToString(3),
+                    taskbarHidden = Taskbar.IsHidden,
+                    autostart = ShellHost.Autostart,
+                    dataDir = Paths.Root,
+                };
+            case "account": return SystemInfo.Account();
+            case "windowsWallpaper": return SystemInfo.WindowsWallpaper();
+            case "wallpaperLibrary": return await Task.Run(SystemInfo.WindowsWallpaperLibrary);
+            case "batteries": return await SystemInfo.DeviceBatteriesAsync();
+            case "location": return await SystemInfo.LocationAsync();
+
+            // ----- State, shared by both layers -----
+            case "getState":
+                return await StateStore.LoadAsync();
+            case "setState":
+                // Whole state (importing a setup): replace, and tell every other page.
+                await StateStore.ReplaceAsync(args);
+                _host.EmitToOthers(_part, "state", args);
+                return null;
+            case "patchState":
+            {
+                var set = args.TryGetProperty("set", out var st) ? st : default;
+                var del = args.TryGetProperty("del", out var dl) && dl.ValueKind == JsonValueKind.Array
+                    ? dl.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x.Length > 0).ToList() : new List<string>();
+                await StateStore.PatchAsync(set, del);
+                _host.EmitToOthers(_part, "statePatch", args);
+                return null;
+            }
+            case "send":
+                // Lets one layer ask the other to do something (open Settings, show a menu…).
+                _host.Emit(Str(args, "to"), "command", new
+                {
+                    name = Str(args, "name"),
+                    data = args.TryGetProperty("data", out var d) ? (object)d : null,
+                    from = _part,
+                });
+                return null;
+
+            // ----- Shell layer geometry -----
+            case "setRegion":
+                var rects = new List<Native.RECT>();
+                if (args.TryGetProperty("rects", out var list))
+                    foreach (var r in list.EnumerateArray())
+                        rects.Add(new Native.RECT(r[0].GetInt32(), r[1].GetInt32(), r[2].GetInt32(), r[3].GetInt32()));
+                _host.SetShellRegion(Bool(args, "full"), rects);
+                return null;
+            case "setGlass":
+                var plates = new List<GlassPlates.Plate>();
+                if (args.TryGetProperty("plates", out var plateList))
+                    foreach (var p in plateList.EnumerateArray())
+                        plates.Add(new GlassPlates.Plate(p[0].GetInt32(), p[1].GetInt32(), p[2].GetInt32(), p[3].GetInt32(), p[4].GetInt32()));
+                _host.SetGlass(plates);
+                return null;
+            case "setDockRect":
+                _host.SetDockRect(args.TryGetProperty("rect", out var dr) && dr.ValueKind == JsonValueKind.Array
+                    ? new Native.RECT(dr[0].GetInt32(), dr[1].GetInt32(), dr[2].GetInt32(), dr[3].GetInt32())
+                    : null);
+                return null;
+            case "setAutostart":
+                ShellHost.Autostart = Bool(args, "on");
+                return ShellHost.Autostart;
+            case "updateStatus": return Updater.Status();
+            case "applyUpdate":
+                Updater.ApplyAndRestart(_host.Quit);
+                return null;
+            // ----- Screenshots, idle time, spaces, app menus, tray, Stage Manager -----
+            case "screenshot":
+                _host.TakeScreenshot(Bool(args, "region"));
+                return null;
+            case "idle":
+                var info = new LASTINPUTINFO { cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<LASTINPUTINFO>() };
+                GetLastInputInfo(ref info);
+                return new { seconds = (Environment.TickCount - (int)info.dwTime) / 1000.0 };
+            case "desktops":
+                var (spaces, currentSpace) = VirtualDesktops.Read();
+                return new { list = spaces, current = currentSpace };
+            case "switchDesktop":
+                await VirtualDesktops.SwitchTo(args.GetProperty("index").GetInt32());
+                return null;
+            case "stepDesktop":
+                VirtualDesktops.Step(args.GetProperty("direction").GetInt32());
+                return null;
+            case "newDesktop":
+                VirtualDesktops.Add();
+                return null;
+            case "closeDesktop":
+                VirtualDesktops.CloseCurrent();
+                return null;
+            case "appMenus":
+                return await AppMenus.NamesAsync(new IntPtr(args.GetProperty("hwnd").GetInt64()));
+            case "openAppMenu":
+                await AppMenus.OpenAsync(new IntPtr(args.GetProperty("hwnd").GetInt64()), args.GetProperty("index").GetInt32());
+                return null;
+            case "trayIcons": return _host.Tray.Snapshot();
+            case "trayClick":
+                _host.Tray.Click(Str(args, "id"), Str(args, "button"), args.GetProperty("x").GetInt32(), args.GetProperty("y").GetInt32());
+                return null;
+            case "setTray":
+                _host.SetTray(Bool(args, "on"));
+                return _host.Tray.Snapshot();
+            case "setStage":
+                _host.SetStage(Bool(args, "on"));
+                return _host.StageEnabled;
+            case "setLocked":
+                _host.SetLocked(Bool(args, "on"));
+                return null;
+            case "setInteractive":
+                _host.SetShellInteractive(Bool(args, "on"));
+                return null;
+            case "reserve":
+                if (_part.StartsWith("secondary")) _host.ReserveSecondary(_part, args.GetProperty("top").GetInt32(), args.GetProperty("bottom").GetInt32());
+                else _host.Reserve(args.GetProperty("top").GetInt32(), args.GetProperty("bottom").GetInt32());
+                return null;
+            case "setZoom":
+                _host.SetZoom(_part, args.GetProperty("zoom").GetDouble());
+                return null;
+            case "setTaskbarHidden":
+                _host.SetTaskbarHidden(Bool(args, "hidden"));
+                return null;
+
+            // ----- Apps & windows -----
+            case "apps": return await _host.Apps.GetAsync(refresh: Bool(args, "refresh"));
+            case "games": return await Task.Run(Steam.Load);
+            case "launchApp":
+                await _host.Apps.LaunchAsync(Str(args, "id"));
+                return null;
+            case "launchUri":
+                var uri = Str(args, "uri");
+                if (!Steam.IsLaunchUri(uri)) throw new InvalidOperationException("Unsupported link.");
+                Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true });
+                return null;
+            case "windows":
+                return new
+                {
+                    windows = await _host.Windows.ListAsync(),
+                    foreground = WindowTracker.Foreground(),
+                    language = SystemInfo.InputLanguage(),
+                };
+            case "focus":
+                WindowTracker.Focus(args.GetProperty("hwnd").GetInt64());
+                return null;
+            case "minimize":
+                WindowTracker.Minimize(args.GetProperty("hwnd").GetInt64());
+                return null;
+            case "closeWindow":
+                WindowTracker.Close(args.GetProperty("hwnd").GetInt64());
+                return null;
+
+            // ----- Files & places -----
+            case "openFolder":
+                var folder = Str(args, "path");
+                if (!Directory.Exists(folder)) throw new InvalidOperationException("That folder doesn't exist.");
+                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{folder}\"") { UseShellExecute = true });
+                return null;
+            case "openShell":
+                var shellTarget = Str(args, "target") switch
+                {
+                    "trash" => "shell:RecycleBinFolder",
+                    "thispc" => "shell:MyComputerFolder",
+                    "explorer" => "",
+                    _ => throw new InvalidOperationException("Unsupported location."),
+                };
+                Process.Start(new ProcessStartInfo("explorer.exe", shellTarget) { UseShellExecute = true });
+                return null;
+            case "openSettingsPage":
+                if (!SettingsPages.TryGetValue(Str(args, "page"), out var settingsUri))
+                    throw new InvalidOperationException("Unknown settings page.");
+                Process.Start(new ProcessStartInfo(settingsUri) { UseShellExecute = true });
+                return null;
+
+            // ----- Desktop icons -----
+            case "desktopItems": return await _host.Desktop.ListAsync();
+            case "desktopOpen":
+                DesktopItems.Open(Str(args, "path"));
+                return null;
+            case "desktopReveal":
+                DesktopItems.Reveal(Str(args, "path"));
+                return null;
+            case "desktopNewFolder": return DesktopItems.NewFolder();
+            case "desktopRename": return DesktopItems.Rename(Str(args, "path"), Str(args, "name"));
+
+            // ----- Control Center & status -----
+            case "volume": return SystemControls.Volume();
+            case "setVolume":
+                SystemControls.SetVolume(args.GetProperty("level").GetDouble());
+                return SystemControls.Volume();
+            case "setMute":
+                SystemControls.SetMute(Bool(args, "muted"));
+                return SystemControls.Volume();
+            case "brightness": return SystemControls.Brightness();
+            case "setBrightness":
+                await Task.Run(() => SystemControls.SetBrightness(args.GetProperty("level").GetInt32()));
+                return null;
+            case "radios": return await SystemControls.RadiosAsync();
+            case "setRadio":
+                await SystemControls.SetRadioAsync(Str(args, "kind"), Bool(args, "on"));
+                return await SystemControls.RadiosAsync();
+            case "network": return SystemControls.Network();
+            case "stats": return SystemControls.Stats();
+            case "events": return await SystemControls.EventsAsync();
+
+            // ----- Files: search, Quick Look, stacks, open with -----
+            case "searchFiles": return await _host.Files.SearchAsync(Str(args, "query"));
+            case "preview": return await _host.Files.PreviewAsync(Str(args, "path"));
+            case "recentFiles":
+                return await _host.Files.RecentAsync(Str(args, "folder"),
+                    args.TryGetProperty("count", out var cnt) ? cnt.GetInt32() : 12, Bool(args, "images"));
+            case "openPath":
+                Files.Open(Str(args, "path"));
+                return null;
+            case "revealPath":
+                Files.Reveal(Str(args, "path"));
+                return null;
+            case "openWith":
+                var exe = args.TryGetProperty("exePath", out var ep) && ep.ValueKind == JsonValueKind.String ? ep.GetString()
+                    : args.TryGetProperty("appId", out var ai) && ai.ValueKind == JsonValueKind.String ? AppCatalog.ResolveExe(ai.GetString()!) : null;
+                Files.OpenWith(exe, files);
+                return files.Count;
+            case "webSearch":
+                var url = "https://www.bing.com/search?q=" + Uri.EscapeDataString(Str(args, "query"));
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+                return null;
+
+            // ----- Windows: snapping, Mission Control, input -----
+            case "snap":
+                _host.Snap(Str(args, "where"));
+                return null;
+            case "missionControl":
+                if (Bool(args, "app")) await _host.ShowAppExposeAsync();
+                else await _host.ShowMissionControlAsync(args.TryGetProperty("exe", out var mx) && mx.ValueKind == JsonValueKind.String ? mx.GetString() : null);
+                return null;
+            case "slide":
+                _host.Slide(args.GetProperty("hwnd").GetInt64(), args.GetProperty("direction").GetInt32());
+                return null;
+            case "setSwipeOrder":
+                var order = new List<(string, long)>();
+                foreach (var o in args.GetProperty("apps").EnumerateArray())
+                    order.Add((o.GetProperty("exe").GetString()!.ToLowerInvariant(), o.GetProperty("hwnd").GetInt64()));
+                _host.SetSwipeOrder(order);
+                return null;
+            case "pickImage":
+                return PickImage();
+
+            // ----- Clipboard history -----
+            case "clipHistory": return ClipboardHistory.Items();
+            case "clipPaste": await _host.PasteClipAsync(Str(args, "id"), Bool(args, "paste")); return null;
+            case "clipPin": ClipboardHistory.Pin(Str(args, "id"), Bool(args, "pinned")); return null;
+            case "clipDelete": ClipboardHistory.Delete(Str(args, "id")); return null;
+            case "clipClear": ClipboardHistory.Clear(Bool(args, "pinned")); return null;
+            case "clipSnippet": ClipboardHistory.AddSnippet(Str(args, "text")); return null;
+            case "setClipboardHistory": _host.SetClipboardHistory(Bool(args, "on")); return null;
+            case "systemCheck": return await _host.RunChecksAsync();
+
+            case "stocks":
+                return await Stocks.GetAsync(args.GetProperty("symbols").EnumerateArray().Select(e => e.GetString() ?? ""));
+            case "currentSpace":
+            {
+                var (spaceList, cur) = VirtualDesktops.Read();
+                return new { id = spaceList[cur].Id, name = spaceList[cur].Name, index = cur };
+            }
+
+            // ----- Window animations -----
+            case "setDockIcons":
+            {
+                var map = new Dictionary<string, Native.RECT>();
+                foreach (var p in args.GetProperty("icons").EnumerateObject())
+                {
+                    var a = p.Value.EnumerateArray().Select(v => v.GetInt32()).ToArray();
+                    if (a.Length == 4) map[p.Name] = new Native.RECT(a[0], a[1], a[2], a[3]);
+                }
+                _host.SetDockIcons(map);
+                return null;
+            }
+            case "setWindowStyle":
+                _host.SetWindowStyle(Str(args, "corners"), Str(args, "border"), Str(args, "accent"), Str(args, "hairline"));
+                return null;
+            case "setWindowAnimations": _host.SetWindowAnimations(Bool(args, "on")); return null;
+
+            // ----- Other displays -----
+            case "setOtherDisplays": _host.SetOtherDisplays(Bool(args, "on")); return null;
+            case "windowScreens":
+            {
+                var map = new Dictionary<string, int>();
+                foreach (var e in args.GetProperty("hwnds").EnumerateArray()) { var h = e.GetInt64(); map[h.ToString()] = _host.ScreenOf(new IntPtr(h)); }
+                return map;
+            }
+
+            // ----- Audio visualizers -----
+            case "audioViz": _host.SetAudioViz(_part, Bool(args, "on")); return null;
+
+            // ----- Setup backup -----
+            case "exportSetup": return SetupPackage.Export();
+            case "importSetup": return SetupPackage.Import();
+            case "exportTheme": return SetupPackage.ExportTheme(Str(args, "name"), args.GetProperty("look"));
+            case "importTheme": return SetupPackage.ImportTheme();
+
+            // ----- Claude -----
+            case "askClaude": _host.AskClaude(Str(args, "id"), Str(args, "question")); return null;
+            case "cancelClaude": ClaudeAsk.Cancel(); return null;
+            case "claudeStatus": return new { hasKey = ClaudeAsk.HasKey };
+            case "setClaudeKey": ClaudeAsk.SaveKey(args.TryGetProperty("key", out var ck) ? ck.GetString() : null); return new { hasKey = ClaudeAsk.HasKey };
+
+            // ----- Windows Hello -----
+            case "helloAvailable": return await LockAuth.HelloAvailableAsync();
+            case "helloVerify": return await _host.HelloVerifyAsync();
+            case "pickFolder":
+            {
+                var dialog = new OpenFolderDialog { Title = args.TryGetProperty("title", out var t) ? t.GetString() : "Choose a folder" };
+                return dialog.ShowDialog() == true ? dialog.FolderName : null;
+            }
+            case "screenshotFolder":
+                return Screenshots.DefaultFolder;
+            case "setInput":
+                _host.SetInput(Bool(args, "gestures"), args.TryGetProperty("fingers", out var fg) ? fg.GetInt32() : 3, Bool(args, "switcher"),
+                    !args.TryGetProperty("windowsKeys", out var wk) || wk.ValueKind != System.Text.Json.JsonValueKind.False);
+                return new { touchpad = _host.Touchpad.Detected };
+            case "touchpadStatus": return new { touchpad = _host.Touchpad.Detected };
+
+            // ----- Media -----
+            case "media": return await Media.NowPlayingAsync();
+            case "mediaControl":
+                await Media.ControlAsync(Str(args, "action"));
+                return null;
+
+            // ----- System -----
+            case "system":
+                RunSystemAction(Str(args, "action"));
+                return null;
+            case "pickWallpaper":
+                return PickWallpaper();
+            case "quit":
+                _host.Quit();
+                return null;
+
+            default:
+                throw new InvalidOperationException($"Unknown request '{type}'.");
+        }
+    }
+
+    static void RunSystemAction(string action)
+    {
+        switch (action)
+        {
+            case "start": Native.PressWindowsKey(); break;
+            case "language": Native.PressKeys(0x5B, 0x20); break; // Win+Space: next keyboard language
+            case "desktop": // show the desktop (minimize every app, but not Haven), or bring them back
+                WindowTracker.ToggleDesktop();
+                break;
+            case "taskmgr": Process.Start(new ProcessStartInfo("taskmgr.exe") { UseShellExecute = true }); break;
+            case "lock": Native.LockWorkStation(); break;
+            case "signout": Process.Start(new ProcessStartInfo("shutdown.exe", "/l") { CreateNoWindow = true }); break;
+            case "restart": Process.Start(new ProcessStartInfo("shutdown.exe", "/r /t 0") { CreateNoWindow = true }); break;
+            case "shutdown": Process.Start(new ProcessStartInfo("shutdown.exe", "/s /t 0") { CreateNoWindow = true }); break;
+            default: throw new InvalidOperationException("Unknown action.");
+        }
+    }
+
+    /// <summary>Lets you choose a picture for a custom icon (PNG, SVG, JPEG, ICO, WebP, GIF).</summary>
+    string? PickImage()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Choose an icon",
+            Filter = "Images|*.png;*.svg;*.jpg;*.jpeg;*.ico;*.webp;*.gif;*.bmp",
+            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+        };
+        if (dialog.ShowDialog() != true) return null;
+        var dir = Path.Combine(Paths.Public, "custom");
+        Directory.CreateDirectory(dir);
+        var target = Path.Combine(dir, Guid.NewGuid().ToString("n") + Path.GetExtension(dialog.FileName).ToLowerInvariant());
+        File.Copy(dialog.FileName, target);
+        return Paths.Url(target);
+    }
+
+    string? PickWallpaper()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Choose a wallpaper",
+            Filter = "Images|*.jpg;*.jpeg;*.png;*.webp;*.bmp;*.gif",
+            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+        };
+        if (dialog.ShowDialog() != true) return null;
+        var target = Path.Combine(Paths.Wallpapers, Guid.NewGuid().ToString("n") + Path.GetExtension(dialog.FileName));
+        File.Copy(dialog.FileName, target);
+        return Paths.Url(target);
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct LASTINPUTINFO { public uint cbSize, dwTime; }
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
+
+    static string Str(JsonElement args, string name) =>
+        args.ValueKind == JsonValueKind.Object && args.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
+            ? v.GetString()!
+            : throw new ArgumentException($"Missing '{name}'.");
+
+    static bool Bool(JsonElement args, string name) =>
+        args.ValueKind == JsonValueKind.Object && args.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
+}

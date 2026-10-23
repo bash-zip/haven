@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "haven-ui", "runtimeExecutable": "node", "runtimeArgs": ["C:/Users/iaman/AppData/Local/Temp/claude/C--Users-iaman-AppData-Local-Claude-Data-claude-pzs8sxrjxfjjc-scratch-workspaces-a507e786-be24-45d1-9f47-4554e9cb21bd-d5fc0c70-5a45-43eb-980f-500b3cb87b82-scratch-2026-10-21-76f72b/7fce8388-c4c0-4bc3-b998-455a162f5dbc/scratchpad/serve.js", "C:/Haven/Haven/wwwroot", "5179"], "port": 5178 }
+  ]
+}
