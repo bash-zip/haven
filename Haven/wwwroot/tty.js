@@ -57,7 +57,7 @@ function setTtyTab(i) {
 function renderTtyChrome() {
   const name = TTY_TABS[TTY.tab];
   const cmd = { fetch: 'fastfetch --logo haven', cava: 'cava -p ~/.config/cava/dots', life: 'life --beat', orb: 'orb --points 420 --spin', rain: 'cmatrix -b -C white' }[name];
-  const hint = { fetch: '1-5 or [ ] switch workspace', cava: 'up/down gain · m mirror', life: 'space · r · c · click', orb: 'arrows or drag to spin', rain: 'space or click to burst' }[name];
+  const hint = { fetch: '1-5 or [ ] switch workspace', cava: 'up/down gain · m mirror', life: 'space · r · c · click', orb: 'arrows or drag to spin', rain: 'space or click: more rain' }[name];
   const user = (env.user || 'user').toLowerCase();
   $('#tty-title').textContent = `${user}@haven: ~ — ${name}`;
   $('#tty-name').replaceChildren(h('i', { class: 'tty-dot' }), document.createTextNode(' ' + name));
@@ -258,7 +258,7 @@ function drawLife(ctx, W, H) {
     if (L.red[i] > 0) L.red[i] = Math.max(0, L.red[i] - 0.01);
     dot(ctx, (x + 0.5) * cw, (y + 0.5) * ch, alive ? r : r * 0.3, alive ? (L.red[i] > 0.2 ? RED : INK) : FAINT);
   }
-  $('#tty-sub').textContent = `gen ${TTY.lifeGen} · pop ${pop} · ${TTY.lifeRun ? 'running' : 'paused'} · red = born on a beat`;
+  $('#tty-sub').textContent = `gen ${TTY.lifeGen} · pop ${pop} · ${TTY.lifeRun ? 'running' : 'paused'} · red cells: born on a beat`;
 }
 
 let orbPts = null;
@@ -317,7 +317,7 @@ function drawRain(ctx, W, H, dpr) {
   }
   if (TTY.rain.length > 90) TTY.rain.splice(0, TTY.rain.length - 90);
   ctx.textAlign = 'start';
-  $('#tty-sub').textContent = `streams ${TTY.rain.length} · speed 1.1x · follow the red one`;
+  $('#tty-sub').textContent = `streams ${TTY.rain.length} · speed 1.1x · spot the red stream`;
 }
 
 /* ---------- Lifecycle ---------- */

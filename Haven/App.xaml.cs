@@ -31,6 +31,10 @@ public partial class App : Application
             return;
         }
 
+        // `Haven.exe --install` / `--uninstall`: the built-in installer (see Installer.cs).
+        if (e.Args.Length >= 1 && e.Args[0] == "--install") { Installer.Install(start: true); Shutdown(); return; }
+        if (e.Args.Length >= 1 && e.Args[0] == "--uninstall") { Installer.Uninstall(); Shutdown(); return; }
+
         // `Haven.exe --autostart on|off`: turn starting at sign-in on or off without opening Haven.
         if (e.Args.Length >= 2 && e.Args[0] == "--autostart")
         {
@@ -48,6 +52,9 @@ public partial class App : Application
             return;
         }
 
+        // A downloaded copy offers to install itself on first run.
+        if (Installer.OfferOnFirstRun(e.Args)) { Shutdown(); return; }
+
         _single = new Mutex(true, @"Local\Haven.Desktop", out bool first);
         if (!first)
         {
@@ -57,9 +64,11 @@ public partial class App : Application
 
         // Whatever happens, never leave the user without a taskbar.
         AppDomain.CurrentDomain.ProcessExit += (_, _) => { Taskbar.Restore(); WindowsGestures.Restore(); WindowAnimator.RestoreOsAnimation(); WindowStyler.RestoreAll(); };
-        AppDomain.CurrentDomain.UnhandledException += (_, _) => { Taskbar.Restore(); WindowsGestures.Restore(); WindowAnimator.RestoreOsAnimation(); };
+        AppDomain.CurrentDomain.UnhandledException += (_, args) => { Log.Crash("app", args.ExceptionObject as Exception); Taskbar.Restore(); WindowsGestures.Restore(); WindowAnimator.RestoreOsAnimation(); };
+        TaskScheduler.UnobservedTaskException += (_, args) => { Log.Error("task", args.Exception?.GetBaseException().ToString() ?? "?"); args.SetObserved(); };
         DispatcherUnhandledException += (_, args) =>
         {
+            Log.Crash("ui", args.Exception);
             Taskbar.Restore();
             WindowsGestures.Restore();
             WindowAnimator.RestoreOsAnimation();
@@ -70,6 +79,9 @@ public partial class App : Application
         // Signing out or restarting with Haven set to start at sign-in: keep Windows' own touchpad
         // gestures switched off, because Windows only reads that setting at sign-in.
         SessionEnding += (_, _) => { if (ShellHost.AutostartKnown) WindowsGestures.KeepThroughSignOut(); };
+
+        Log.Prune();
+        Log.Info($"Haven {typeof(App).Assembly.GetName().Version} starting ({string.Join(' ', e.Args)})");
 
         // Started from the sign-in entry ("--startup"): Explorer may still be loading; ShellHost copes with that.
         _shell = new ShellHost();

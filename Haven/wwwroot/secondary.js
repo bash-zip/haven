@@ -13,11 +13,11 @@ function secBuild() {
   document.documentElement.classList.add('part-secondary');
   const root = h('div', { class: 'sec-root' },
     h('header', { class: 'sec-bar' },
-      h('button', { class: 'sec-logo', title: 'Search', onclick: () => toShell('openSpotlight') },
+      h('button', { class: 'sec-logo', title: 'Search', onclick: () => toShell('openSearch') },
         svg('<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M1 1h6.6v6.6H1zM8.4 1H15v6.6H8.4zM1 8.4h6.6V15H1zM8.4 8.4H15V15H8.4z"/></svg>')),
       h('b', { class: 'sec-app', id: 'sec-app' }),
       h('span', { class: 'sec-spacer' }),
-      h('button', { class: 'sec-icon', title: 'Search', onclick: () => toShell('openSpotlight') }, svg('<svg viewBox="0 0 20 20" width="14" height="14"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M13 13l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>')),
+      h('button', { class: 'sec-icon', title: 'Search', onclick: () => toShell('openSearch') }, svg('<svg viewBox="0 0 20 20" width="14" height="14"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M13 13l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>')),
       h('span', { class: 'sec-clock', id: 'sec-clock' })),
     h('div', { class: 'sec-dock-wrap' }, h('nav', { class: 'sec-dock dock', id: 'sec-dock' })));
   document.body.append(root);

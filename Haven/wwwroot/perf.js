@@ -54,3 +54,30 @@ function setCovered(on) {
 document.addEventListener('visibilitychange', () => { if (!host) setCovered(document.hidden); });
 
 /* CSS animations (clock hands, sheen, spinning borders) also stop while covered: see .covered in deep.css. */
+
+/* ---------- Errors go to Haven's log (Settings → About → Diagnostic report) ---------- */
+
+{
+  let sent = 0;
+  const report = (message) => {
+    if (!host || sent++ > 30) return; // a broken loop shouldn't flood the log
+    call('logError', { message: String(message).slice(0, 2000) }).catch(() => {});
+  };
+  addEventListener('error', e => report(`${e.message} at ${(e.filename || '').split('/').pop()}:${e.lineno}:${e.colno}${e.error?.stack ? ' | ' + e.error.stack : ''}`));
+  addEventListener('unhandledrejection', e => report('Unhandled promise: ' + (e.reason?.stack || e.reason)));
+}
+
+{
+  const aboutPage = PAGES.about;
+  PAGES.about = () => [
+    ...aboutPage(),
+    section('Problems & feedback'),
+    group(
+      row('Copy diagnostic report', 'Version, Windows, displays, the system check and recent errors, ready to paste into a bug report. No files or personal settings.',
+        button('Copy Report', async () => {
+          try { const text = await call('diagnosticReport'); await navigator.clipboard.writeText(text); toast('Diagnostic report copied'); }
+          catch (err) { toast(err.message); }
+        }, true)),
+      row('Open the log folder', null, button('Open Logs', () => call('openLogs')))),
+  ];
+}

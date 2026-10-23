@@ -1241,7 +1241,7 @@ async function focusWindow(w) {
 /* ---------- Launchpad ---------- */
 
 function openLaunchpad() {
-  if (!IS_SHELL) return toShell('openLaunchpad');
+  if (!IS_SHELL) return toShell('openApp Library');
   closeOverlays();
   $('#launchpad').hidden = false;
   $('#launchpad-search').value = '';
@@ -1264,7 +1264,7 @@ let spotlightIndex = 0;
 let spotlightMode = 'search'; // search | clipboard
 
 function openSpotlight(mode = 'search') {
-  if (!IS_SHELL) return toShell('openSpotlight', mode);
+  if (!IS_SHELL) return toShell('openSearch', mode);
   closeOverlays();
   spotlightMode = typeof mode === 'string' ? mode : 'search';
   $('#spotlight').hidden = false;
@@ -2018,7 +2018,7 @@ const MENUS = {
     { label: 'New File Explorer Window', action: () => openShell('explorer') },
     { label: 'New Folder on Desktop', action: () => toDesktop('newFolder') },
     '-',
-    { label: 'Open Launchpad', action: () => openLaunchpad() },
+    { label: 'Open App Library', action: () => openLaunchpad() },
     { label: 'Search…', hint: 'Alt+Space', action: () => openSpotlight() },
     '-',
     { label: 'Rescan Apps', action: rescanApps },

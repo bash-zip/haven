@@ -254,11 +254,12 @@ async function setStageManager(on) {
 let updateInfo = null;
 
 async function checkForUpdate(ask) {
-  try { updateInfo = await call('updateStatus'); } catch { return; }
+  try { updateInfo = await call('updateStatus', { force: !ask }); } catch { return; }
   if (updateInfo?.available && ask) {
-    notify('Update available', 'A new version of Haven is ready to install.');
-    if (await confirmDialog('Update Haven?', 'A newer version of Haven is ready. Haven will restart to install it; your apps keep running.', 'Update and Restart'))
-      call('applyUpdate');
+    const v = updateInfo.latest ? `Haven ${updateInfo.latest}` : 'A newer version of Haven';
+    notify('Update available', `${v} is ready to install.`);
+    if (await confirmDialog('Update Haven?', `${v} is ready.${updateInfo.notes ? ' ' + updateInfo.notes : ''} Haven will restart to install it; your apps keep running and your settings stay as they are.`, 'Update and Restart'))
+      call('applyUpdate').catch(err => toast(err.message));
   }
   refreshSettingsPage();
 }
@@ -269,7 +270,7 @@ async function checkForUpdate(ask) {
   const baseWindow = MENUS.window;
   MENUS.window = () => [
     ...baseWindow().slice(0, 2),
-    { label: S.stageManager ? 'Turn Off Stage Manager' : 'Turn On Stage Manager', action: () => setStageManager(!S.stageManager) },
+    { label: S.stageManager ? 'Turn Off Stage View' : 'Turn On Stage View', action: () => setStageManager(!S.stageManager) },
     '-',
     { label: 'Spaces…', action: async () => { const r = $('[data-menu="window"]').getBoundingClientRect(); showMenu(r.left, r.bottom + 3, await spacesMenuItems()); } },
     ...baseWindow().slice(2),
@@ -283,8 +284,8 @@ async function checkForUpdate(ask) {
   ];
 }
 
-ACTIONS.notifications = ['Notification Center', () => toggleNotificationCenter()];
-ACTIONS.stage = ['Stage Manager on/off', () => setStageManager(!S.stageManager)];
+ACTIONS.notifications = ['Notifications', () => toggleNotificationCenter()];
+ACTIONS.stage = ['Stage View on/off', () => setStageManager(!S.stageManager)];
 ACTIONS.saver = ['Start Screen Saver', () => startSaver()];
 
 // Control Center gets a Stage Manager tile.
@@ -297,7 +298,7 @@ ACTIONS.saver = ['Start Screen Saver', () => startSaver()];
     if (grid && !grid.querySelector('.cc-stage')) {
       grid.append(h('button', { class: 'cc-block cc-square cc-stage' + (S.stageManager ? ' on' : ''), onclick: () => setStageManager(!S.stageManager) },
         h('span', { class: 'cc-tile-icon' }, svg('<svg viewBox="0 0 20 20"><rect x="7" y="4" width="10" height="12" rx="2" fill="currentColor"/><rect x="2" y="5" width="3" height="4" rx="1" fill="currentColor" opacity=".6"/><rect x="2" y="11" width="3" height="4" rx="1" fill="currentColor" opacity=".6"/></svg>')),
-        h('span', { text: 'Stage Manager' })));
+        h('span', { text: 'Stage View' })));
     }
   };
 }

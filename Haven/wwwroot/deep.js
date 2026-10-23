@@ -22,41 +22,41 @@ for (const [k, v] of Object.entries(DEEP_DEFAULTS)) if (S[k] === undefined) S[k]
 
 // More of Haven's wave wallpapers for the themes.
 Object.assign(WAVE_PALETTES, {
-  signal:    { label: 'Signal',    bg: ['#050505', '#141414'], waves: [['#1f1f1f', '#080808'], ['#3a0d0a', '#0c0c0c']] },
-  paper:     { label: 'Paper',     bg: ['#f3efe6', '#e2dccd'], waves: [['#ffffff', '#ece6d8'], ['#d8cfbd', '#f0ebe0']] },
-  orbit:     { label: 'Orbit',     bg: ['#03141a', '#0b3b45'], waves: [['#0f5c66', '#042128'], ['#1fd1c1', '#0a4650']] },
-  velvet:    { label: 'Velvet',    bg: ['#1c1630', '#4a3a7a'], waves: [['#8f7ad6', '#2f2556'], ['#d6b8f5', '#6a52b0']] },
-  neon:      { label: 'Neon',      bg: ['#07061a', '#1d1450'], waves: [['#4b2fd6', '#110b38'], ['#ff4fd8', '#3a1ea6']] },
-  fjord:     { label: 'Fjord',     bg: ['#1b2530', '#4f6475'], waves: [['#8fa7b8', '#2e3d4a'], ['#cfe0ea', '#6f8798']] },
-  rosewood:  { label: 'Rosewood',  bg: ['#2a1a1e', '#6e4650'], waves: [['#b88792', '#4a2c34'], ['#ecc6cc', '#8c5d68']] },
-  moss:      { label: 'Moss',      bg: ['#101a10', '#2f4a2c'], waves: [['#5f8752', '#1d2e1b'], ['#a9c98e', '#45683d']] },
-  cobalt:    { label: 'Cobalt',    bg: ['#050b18', '#0e2350'], waves: [['#1c4ab5', '#071433'], ['#3aa0ff', '#123a8a']] },
-  aubergine: { label: 'Aubergine', bg: ['#1a0a14', '#4d1530'], waves: [['#8a2448', '#2a0c1c'], ['#e0584a', '#6b1a35']] },
-  harbor:    { label: 'Harbor',    bg: ['#0a1422', '#1e3a5c'], waves: [['#3b6ea5', '#112640'], ['#9cc3e8', '#2c5888']] },
-  sage:      { label: 'Sage',      bg: ['#1b2414', '#4f6b2c'], waves: [['#86b04a', '#2c3d17'], ['#d2ee8c', '#5e8a2c']] },
-  abyss:     { label: 'Abyss',     bg: ['#000206', '#031030'], waves: [['#0b2a7a', '#01081c'], ['#2f6bff', '#06215e']] },
-  tty:       { label: 'TTY',       bg: ['#000000', '#020a04'], waves: [['#06200c', '#010402'], ['#13b84a', '#04300f']] },
+  signal:    { label: 'Redline',    bg: ['#050505', '#141414'], waves: [['#1f1f1f', '#080808'], ['#3a0d0a', '#0c0c0c']] },
+  paper:     { label: 'Notebook',     bg: ['#f3efe6', '#e2dccd'], waves: [['#ffffff', '#ece6d8'], ['#d8cfbd', '#f0ebe0']] },
+  orbit:     { label: 'Teal Grid',     bg: ['#03141a', '#0b3b45'], waves: [['#0f5c66', '#042128'], ['#1fd1c1', '#0a4650']] },
+  velvet:    { label: 'Lavender',    bg: ['#1c1630', '#4a3a7a'], waves: [['#8f7ad6', '#2f2556'], ['#d6b8f5', '#6a52b0']] },
+  neon:      { label: 'Synthwave',      bg: ['#07061a', '#1d1450'], waves: [['#4b2fd6', '#110b38'], ['#ff4fd8', '#3a1ea6']] },
+  fjord:     { label: 'Glacier',     bg: ['#1b2530', '#4f6475'], waves: [['#8fa7b8', '#2e3d4a'], ['#cfe0ea', '#6f8798']] },
+  rosewood:  { label: 'Blush',  bg: ['#2a1a1e', '#6e4650'], waves: [['#b88792', '#4a2c34'], ['#ecc6cc', '#8c5d68']] },
+  moss:      { label: 'Fern',      bg: ['#101a10', '#2f4a2c'], waves: [['#5f8752', '#1d2e1b'], ['#a9c98e', '#45683d']] },
+  cobalt:    { label: 'Sapphire',    bg: ['#050b18', '#0e2350'], waves: [['#1c4ab5', '#071433'], ['#3aa0ff', '#123a8a']] },
+  aubergine: { label: 'Plum', bg: ['#1a0a14', '#4d1530'], waves: [['#8a2448', '#2a0c1c'], ['#e0584a', '#6b1a35']] },
+  harbor:    { label: 'Marina',    bg: ['#0a1422', '#1e3a5c'], waves: [['#3b6ea5', '#112640'], ['#9cc3e8', '#2c5888']] },
+  sage:      { label: 'Lime',      bg: ['#1b2414', '#4f6b2c'], waves: [['#86b04a', '#2c3d17'], ['#d2ee8c', '#5e8a2c']] },
+  abyss:     { label: 'Deep Sea',     bg: ['#000206', '#031030'], waves: [['#0b2a7a', '#01081c'], ['#2f6bff', '#06215e']] },
+  tty:       { label: 'Terminal',       bg: ['#000000', '#020a04'], waves: [['#06200c', '#010402'], ['#13b84a', '#04300f']] },
 });
 
 const DEEP_THEMES = [
   { id: 'classic', name: 'Haven Classic', tag: 'Default', look: { theme: 'dark', accent: 'blue', wallpaper: 'midnight', deepCorners: 'round', deepCornerSize: 14, deepControls: 'macos', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'scale', deepFont: 'system', deepTitles: 'normal', fxScanlines: false, fxGrain: false, fxHud: false } },
-  { id: 'signal', name: 'Signal', tag: 'Haven', look: { theme: 'black', accent: '#e5483a', wallpaper: 'signal', deepCorners: 'sharp', deepCornerSize: 2, deepControls: 'signal', deepBorder: 'hairline', deepShadow: 'none', deepMotion: 'signal', deepFont: 'mono', deepTitles: 'caps', fxGrain: true, fxHud: true, fxScanlines: false } },
-  { id: 'paper', name: 'Paper', tag: 'Haven', look: { theme: 'light', accent: '#c0392b', wallpaper: 'paper', deepCorners: 'windows', deepCornerSize: 8, deepControls: 'mono', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'fade', deepFont: 'mono', deepTitles: 'normal', fxGrain: true, fxScanlines: false, fxHud: false } },
-  { id: 'orbit', name: 'Orbit', tag: 'Tiling', look: { theme: 'black', accent: '#1fd1c1', wallpaper: 'orbit', deepCorners: 'sharp', deepCornerSize: 4, deepControls: 'mono', deepBorder: 'glow', deepShadow: 'none', deepMotion: 'slide', deepFont: 'mono', deepTitles: 'normal', fxHud: false, fxScanlines: false, fxGrain: false } },
-  { id: 'echo', name: 'Echo', tag: 'From your wallpaper', echo: true, look: { theme: 'glass', deepCorners: 'squircle', deepCornerSize: 18, deepControls: 'macos', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'genie', deepFont: 'system', fxScanlines: false, fxGrain: false, fxHud: false } },
-  { id: 'velvet', name: 'Velvet', tag: 'Pastel', look: { theme: 'dark', accent: '#b89cf0', wallpaper: 'velvet', deepCorners: 'squircle', deepCornerSize: 20, deepControls: 'macos', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'popin', deepFont: 'rounded', fxScanlines: false, fxGrain: false, fxHud: false } },
-  { id: 'neon', name: 'Neon', tag: 'Night', look: { theme: 'transparent', accent: '#ff4fd8', wallpaper: 'neon', deepCorners: 'round', deepCornerSize: 16, deepControls: 'macos', deepBorder: 'gradient', deepSpin: true, deepShadow: 'deep', deepMotion: 'zoom', deepFont: 'system', fxScanlines: false, fxGrain: false, fxHud: false } },
-  { id: 'fjord', name: 'Fjord', tag: 'Arctic', look: { theme: 'grey', accent: '#8fbcd4', wallpaper: 'fjord', deepCorners: 'round', deepCornerSize: 12, deepControls: 'mono', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'slide', deepFont: 'system', fxScanlines: false, fxGrain: false, fxHud: false } },
-  { id: 'ember', name: 'Ember', tag: 'Retro', look: { theme: 'burgundy', accent: 'orange', wallpaper: 'ember', deepCorners: 'bevel', deepCornerSize: 6, deepControls: 'mono', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'slide', deepFont: 'mono', deepTitles: 'normal', fxGrain: true, fxScanlines: false, fxHud: false } },
-  { id: 'orchid', name: 'Orchid', tag: 'Dark', look: { theme: 'dark', accent: 'pink', wallpaper: 'orchid', deepCorners: 'round', deepCornerSize: 14, deepControls: 'macos', deepBorder: 'hairline', deepShadow: 'deep', deepMotion: 'scale', deepFont: 'system', fxScanlines: false, fxGrain: false, fxHud: false } },
-  { id: 'rosewood', name: 'Rosewood', tag: 'Soft', look: { theme: 'dark', accent: '#e6a3b0', wallpaper: 'rosewood', deepCorners: 'squircle', deepCornerSize: 18, deepControls: 'macos', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'fade', deepFont: 'serif', fxScanlines: false, fxGrain: true, fxHud: false } },
-  { id: 'moss', name: 'Moss', tag: 'Nature', look: { theme: 'dark', accent: 'moss', wallpaper: 'moss', deepCorners: 'round', deepCornerSize: 12, deepControls: 'macos', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'genie', deepFont: 'rounded', fxScanlines: false, fxGrain: false, fxHud: false } },
-  { id: 'cobalt', name: 'Cobalt', tag: 'Minimal', look: { theme: 'black', accent: '#3aa0ff', wallpaper: 'cobalt', deepCorners: 'sharp', deepCornerSize: 0, deepControls: 'windows', deepControlsSide: 'right', deepBorder: 'none', deepShadow: 'deep', deepMotion: 'zoom', deepFont: 'system', fxScanlines: false, fxGrain: false, fxHud: false } },
-  { id: 'aubergine', name: 'Aubergine', tag: 'Warm', look: { theme: 'burgundy', accent: '#e0584a', wallpaper: 'aubergine', deepCorners: 'round', deepCornerSize: 14, deepControls: 'macos', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'scale', deepFont: 'system', fxScanlines: false, fxGrain: false, fxHud: false } },
-  { id: 'harbor', name: 'Harbor', tag: 'Clean', look: { theme: 'navy', accent: '#6fa8e6', wallpaper: 'harbor', deepCorners: 'windows', deepCornerSize: 8, deepControls: 'windows', deepControlsSide: 'right', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'fade', deepFont: 'system', fxScanlines: false, fxGrain: false, fxHud: false } },
-  { id: 'sage', name: 'Sage', tag: 'Fresh', look: { theme: 'dark', accent: '#9ccc4a', wallpaper: 'sage', deepCorners: 'squircle', deepCornerSize: 16, deepControls: 'macos', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'popin', deepFont: 'rounded', fxScanlines: false, fxGrain: false, fxHud: false } },
-  { id: 'abyss', name: 'Abyss', tag: 'Hacker', look: { theme: 'black', accent: '#2f6bff', wallpaper: 'abyss', deepCorners: 'notch', deepCornerSize: 8, deepControls: 'signal', deepBorder: 'glow', deepShadow: 'none', deepMotion: 'dots', deepFont: 'mono', deepTitles: 'caps', fxScanlines: true, fxHud: true, fxGrain: false } },
-  { id: 'tty', name: 'TTY', tag: 'Haven TTY', look: { theme: 'black', accent: '#22c55e', wallpaper: 'tty', deepCorners: 'sharp', deepCornerSize: 0, deepControls: 'mono', deepBorder: 'hairline', deepShadow: 'none', deepMotion: 'signal', deepFont: 'mono', deepTitles: 'caps', fxScanlines: true, fxGrain: true, fxHud: false } },
+  { id: 'signal', name: 'Redline', tag: 'Bold', look: { theme: 'black', accent: '#e5483a', wallpaper: 'signal', deepCorners: 'sharp', deepCornerSize: 2, deepControls: 'signal', deepBorder: 'hairline', deepShadow: 'none', deepMotion: 'signal', deepFont: 'mono', deepTitles: 'caps', fxGrain: true, fxHud: true, fxScanlines: false } },
+  { id: 'paper', name: 'Notebook', tag: 'Light', look: { theme: 'light', accent: '#c0392b', wallpaper: 'paper', deepCorners: 'windows', deepCornerSize: 8, deepControls: 'mono', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'fade', deepFont: 'mono', deepTitles: 'normal', fxGrain: true, fxScanlines: false, fxHud: false } },
+  { id: 'orbit', name: 'Teal Grid', tag: 'Focused', look: { theme: 'black', accent: '#1fd1c1', wallpaper: 'orbit', deepCorners: 'sharp', deepCornerSize: 4, deepControls: 'mono', deepBorder: 'glow', deepShadow: 'none', deepMotion: 'slide', deepFont: 'mono', deepTitles: 'normal', fxHud: false, fxScanlines: false, fxGrain: false } },
+  { id: 'echo', name: 'Chameleon', tag: 'From your wallpaper', echo: true, look: { theme: 'glass', deepCorners: 'squircle', deepCornerSize: 18, deepControls: 'macos', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'genie', deepFont: 'system', fxScanlines: false, fxGrain: false, fxHud: false } },
+  { id: 'velvet', name: 'Lavender', tag: 'Pastel', look: { theme: 'dark', accent: '#b89cf0', wallpaper: 'velvet', deepCorners: 'squircle', deepCornerSize: 20, deepControls: 'macos', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'popin', deepFont: 'rounded', fxScanlines: false, fxGrain: false, fxHud: false } },
+  { id: 'neon', name: 'Synthwave', tag: 'Night', look: { theme: 'transparent', accent: '#ff4fd8', wallpaper: 'neon', deepCorners: 'round', deepCornerSize: 16, deepControls: 'macos', deepBorder: 'gradient', deepSpin: true, deepShadow: 'deep', deepMotion: 'zoom', deepFont: 'system', fxScanlines: false, fxGrain: false, fxHud: false } },
+  { id: 'fjord', name: 'Glacier', tag: 'Cool', look: { theme: 'grey', accent: '#8fbcd4', wallpaper: 'fjord', deepCorners: 'round', deepCornerSize: 12, deepControls: 'mono', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'slide', deepFont: 'system', fxScanlines: false, fxGrain: false, fxHud: false } },
+  { id: 'ember', name: 'Campfire', tag: 'Retro', look: { theme: 'burgundy', accent: 'orange', wallpaper: 'ember', deepCorners: 'bevel', deepCornerSize: 6, deepControls: 'mono', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'slide', deepFont: 'mono', deepTitles: 'normal', fxGrain: true, fxScanlines: false, fxHud: false } },
+  { id: 'orchid', name: 'Bloom', tag: 'Dark', look: { theme: 'dark', accent: 'pink', wallpaper: 'orchid', deepCorners: 'round', deepCornerSize: 14, deepControls: 'macos', deepBorder: 'hairline', deepShadow: 'deep', deepMotion: 'scale', deepFont: 'system', fxScanlines: false, fxGrain: false, fxHud: false } },
+  { id: 'rosewood', name: 'Blush', tag: 'Soft', look: { theme: 'dark', accent: '#e6a3b0', wallpaper: 'rosewood', deepCorners: 'squircle', deepCornerSize: 18, deepControls: 'macos', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'fade', deepFont: 'serif', fxScanlines: false, fxGrain: true, fxHud: false } },
+  { id: 'moss', name: 'Fern', tag: 'Nature', look: { theme: 'dark', accent: 'moss', wallpaper: 'moss', deepCorners: 'round', deepCornerSize: 12, deepControls: 'macos', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'genie', deepFont: 'rounded', fxScanlines: false, fxGrain: false, fxHud: false } },
+  { id: 'cobalt', name: 'Sapphire', tag: 'Minimal', look: { theme: 'black', accent: '#3aa0ff', wallpaper: 'cobalt', deepCorners: 'sharp', deepCornerSize: 0, deepControls: 'windows', deepControlsSide: 'right', deepBorder: 'none', deepShadow: 'deep', deepMotion: 'zoom', deepFont: 'system', fxScanlines: false, fxGrain: false, fxHud: false } },
+  { id: 'aubergine', name: 'Plum', tag: 'Warm', look: { theme: 'burgundy', accent: '#e0584a', wallpaper: 'aubergine', deepCorners: 'round', deepCornerSize: 14, deepControls: 'macos', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'scale', deepFont: 'system', fxScanlines: false, fxGrain: false, fxHud: false } },
+  { id: 'harbor', name: 'Marina', tag: 'Clean', look: { theme: 'navy', accent: '#6fa8e6', wallpaper: 'harbor', deepCorners: 'windows', deepCornerSize: 8, deepControls: 'windows', deepControlsSide: 'right', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'fade', deepFont: 'system', fxScanlines: false, fxGrain: false, fxHud: false } },
+  { id: 'sage', name: 'Lime', tag: 'Fresh', look: { theme: 'dark', accent: '#9ccc4a', wallpaper: 'sage', deepCorners: 'squircle', deepCornerSize: 16, deepControls: 'macos', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'popin', deepFont: 'rounded', fxScanlines: false, fxGrain: false, fxHud: false } },
+  { id: 'abyss', name: 'Deep Sea', tag: 'Code', look: { theme: 'black', accent: '#2f6bff', wallpaper: 'abyss', deepCorners: 'notch', deepCornerSize: 8, deepControls: 'signal', deepBorder: 'glow', deepShadow: 'none', deepMotion: 'dots', deepFont: 'mono', deepTitles: 'caps', fxScanlines: true, fxHud: true, fxGrain: false } },
+  { id: 'tty', name: 'Terminal', tag: 'Green screen', look: { theme: 'black', accent: '#22c55e', wallpaper: 'tty', deepCorners: 'sharp', deepCornerSize: 0, deepControls: 'mono', deepBorder: 'hairline', deepShadow: 'none', deepMotion: 'signal', deepFont: 'mono', deepTitles: 'caps', fxScanlines: true, fxGrain: true, fxHud: false } },
 ];
 
 /* ---------- Applying it ---------- */
@@ -467,7 +467,7 @@ async function setExplorerIcon(kind) {
 
 /* ---------- The page ---------- */
 
-addSettingsPage({ id: 'deep', label: 'Deep Customization', icon: 'deep', color: '#141414', keys: 'deep customization themes corners border shadow window controls motion genie animation scanlines grain hud led spectrum wallpaper transition switcher lock screen editor explorer icon theme code surprise' }, 'customize');
+addSettingsPage({ id: 'deep', label: 'Style Studio', icon: 'deep', color: '#141414', keys: 'deep customization themes corners border shadow window controls motion genie animation scanlines grain hud led spectrum wallpaper transition switcher lock screen editor explorer icon theme code surprise' }, 'customize');
 NAV_ICONS.deep = '<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10 2.5v2.2M10 15.3v2.2M2.5 10h2.2M15.3 10h2.2M4.7 4.7l1.5 1.5M13.8 13.8l1.5 1.5M4.7 15.3l1.5-1.5M13.8 6.2l1.5-1.5"/></g><circle cx="15.5" cy="15.5" r="2.6" fill="#e5483a"/></svg>';
 
 // Themes now live on Deep Customization, not on Appearance.
@@ -506,7 +506,7 @@ PAGES.deep = () => {
   const hero = h('div', { class: 'dc-hero' },
     bigPreview(),
     h('div', { class: 'dc-hero-text' },
-      h('div', { class: 'dc-kicker' }, h('i', { class: 'tty-dot' }), document.createTextNode(' DEEP CUSTOMIZATION')),
+      h('div', { class: 'dc-kicker' }, h('i', { class: 'tty-dot' }), document.createTextNode(' STYLE STUDIO')),
       h('div', { class: 'dc-name', text: current?.name || 'Your look' }),
       h('div', { class: 'muted', text: current ? `${current.tag}. Change anything below and it becomes yours.` : 'Every setting below, together.' }),
       h('div', { class: 'dc-actions' },
@@ -525,7 +525,7 @@ PAGES.deep = () => {
 
     section('Windows'),
     group(
-      row('Corners', 'Widgets, menus, search, Control Center, the Dock and Haven’s windows. Windows matches Windows 11; Sharp is a true 90°.',
+      row('Corners', 'Widgets, menus, search, Quick Controls, the Dock and Haven’s windows. Windows matches Windows 11; Sharp is a true 90°.',
         segmented([['round', 'Round'], ['windows', 'Windows'], ['squircle', 'Squircle'], ['sharp', 'Sharp'], ['bevel', 'Bevel'], ['notch', 'Notch']], S.deepCorners, v => setPref('deepCorners', v))),
       !['sharp', 'windows'].includes(S.deepCorners) && row('Corner size', null, (() => {
         const r = slider(0, 28, 1, S.deepCornerSize, v => { S.deepCornerSize = v; applyDeep(); lbl.textContent = v + 'px'; }, v => setPref('deepCornerSize', v));
@@ -534,7 +534,7 @@ PAGES.deep = () => {
       })()),
       row('Window controls', 'Close, minimize and zoom in Haven’s own windows, like System Settings.'),
       h('div', { class: 'sw-pad dc-picks' },
-        ctlCard('macos', 'macOS', [h('i', { class: 'r' }), h('i', { class: 'y' }), h('i', { class: 'g' })]),
+        ctlCard('macos', 'Traffic lights', [h('i', { class: 'r' }), h('i', { class: 'y' }), h('i', { class: 'g' })]),
         ctlCard('windows', 'Windows', [h('b', { text: '–' }), h('b', { text: '□' }), h('b', { text: '×' })]),
         ctlCard('mono', 'Mono', [h('i'), h('i'), h('i')]),
         ctlCard('signal', 'Signal', [h('i', { class: 'r' }), h('i', { class: 'o' }), h('i', { class: 'o' })])),
@@ -547,7 +547,7 @@ PAGES.deep = () => {
 
     section('Motion'),
     group(
-      row('Open and close', 'How Haven’s windows and panels appear: Settings, search, Launchpad, Control Center, stacks. (App windows shrinking into the Dock is in Desktop & Dock.)'),
+      row('Open and close', 'How Haven’s windows and panels appear: Settings, search, App Library, Quick Controls, stacks. (App windows shrinking into the Dock is in Desktop & Dock.)'),
       h('div', { class: 'sw-pad dc-picks motion-picks' }, ...motion.map(motionCard)),
       row('Titles', 'Caps sets window and widget titles in capitals.', segmented([['normal', 'Normal'], ['caps', 'Caps']], S.deepTitles, v => setPref('deepTitles', v))),
       row('Type', null, segmented([['system', 'System'], ['rounded', 'Rounded'], ['mono', 'Mono'], ['serif', 'Serif']], S.deepFont, v => setPref('deepFont', v)))),
@@ -555,7 +555,7 @@ PAGES.deep = () => {
     section('Screen effects'),
     group(
       row('Dot grain', 'A fine dot texture over the desktop and Haven’s panels.', toggle(!!S.fxGrain, v => setPref('fxGrain', v))),
-      row('Scanlines', 'CRT lines, for TTY and Abyss.', toggle(!!S.fxScanlines, v => setPref('fxScanlines', v))),
+      row('Scanlines', 'CRT lines, for the Terminal and Deep Sea themes.', toggle(!!S.fxScanlines, v => setPref('fxScanlines', v))),
       row('HUD corners', 'Corner brackets on widgets and Haven’s windows.', toggle(!!S.fxHud, v => setPref('fxHud', v))),
       row('LED spectrum', 'Dot-matrix bars that move with whatever is playing. They hang under the menu bar, clear of the Dock.', toggle(!!S.fxLed, v => setPref('fxLed', v)))),
 
@@ -571,7 +571,7 @@ PAGES.deep = () => {
     h('div', { class: 'dc-picks icon-picks' },
       iconCard('default', 'Default'), iconCard('classic', 'Classic'), iconCard('h', 'H.'), iconCard('doth', 'Dot H'), iconCard('mono', 'Mono'),
       iconCard('theme', 'Theme'), iconCard('glass', 'Glass'), iconCard('custom', 'Your image')),
-    note('Shown in the Dock and Launchpad. Your image stays on this PC.'),
+    note('Shown in the Dock and App Library. Your image stays on this PC.'),
   ];
 };
 

@@ -6,10 +6,10 @@
    rules) and backing up or moving your whole setup.
    ========================================================================= */
 
-// Two more of Haven's wave wallpapers, for the Sonoma and Monterey looks.
+// Two more of Haven's wave wallpapers, for the Sunset Hills and Violet Bay looks.
 Object.assign(WAVE_PALETTES, {
-  sonoma:   { label: 'Sonoma',   bg: ['#1d1442', '#e9845c'], waves: [['#f2a65e', '#9b3f6e'], ['#ffd59a', '#df6a52']] },
-  monterey: { label: 'Monterey', bg: ['#14164d', '#5a3fd0'], waves: [['#b459d6', '#3524a0'], ['#ff8db9', '#7046e0']] },
+  sonoma:   { label: 'Sunset Hills',   bg: ['#1d1442', '#e9845c'], waves: [['#f2a65e', '#9b3f6e'], ['#ffd59a', '#df6a52']] },
+  monterey: { label: 'Violet Bay', bg: ['#14164d', '#5a3fd0'], waves: [['#b459d6', '#3524a0'], ['#ff8db9', '#7046e0']] },
 });
 
 /** Everything that makes up how Haven looks (not your apps, widgets or data). */
@@ -17,8 +17,8 @@ const LOOK_KEYS = ['theme', 'accent', 'wallpaper', 'dynamicWallpaper', 'glass', 
   'customSurface', 'iconStyle', 'widgetStyle', 'widgetTint', 'dockSize', 'magnify', 'iconOverrides', 'customCss', 'island', 'visualizer'];
 
 const PRESET_LOOKS = [
-  { id: 'sonoma', name: 'Sonoma', look: { theme: 'glass', accent: 'orange', wallpaper: 'sonoma', glass: true, glassStyle: 'liquid', refraction: 60, glassTint: 0.35, iconStyle: 'default', widgetStyle: 'glass' } },
-  { id: 'monterey', name: 'Monterey', look: { theme: 'dark', accent: 'purple', wallpaper: 'monterey', glass: true, glassStyle: 'liquid', refraction: 55, glassTint: 0.45, iconStyle: 'default', widgetStyle: 'glass' } },
+  { id: 'sonoma', name: 'Sunset Hills', look: { theme: 'glass', accent: 'orange', wallpaper: 'sonoma', glass: true, glassStyle: 'liquid', refraction: 60, glassTint: 0.35, iconStyle: 'default', widgetStyle: 'glass' } },
+  { id: 'monterey', name: 'Violet Bay', look: { theme: 'dark', accent: 'purple', wallpaper: 'monterey', glass: true, glassStyle: 'liquid', refraction: 55, glassTint: 0.45, iconStyle: 'default', widgetStyle: 'glass' } },
   { id: 'graphite', name: 'Graphite', look: { theme: 'black', accent: 'slate', wallpaper: 'graphite', glass: true, glassStyle: 'frosted', refraction: 30, glassTint: 0.6, iconStyle: 'dark', widgetStyle: 'glass' } },
   { id: 'dune', name: 'Dune', look: { theme: 'sand', accent: 'champagne', wallpaper: 'dune', glass: true, glassStyle: 'liquid', refraction: 45, glassTint: 0.5, iconStyle: 'default', widgetStyle: 'glass' } },
   { id: 'ember', name: 'Ember', look: { theme: 'burgundy', accent: 'burgundy', wallpaper: 'ember', glass: true, glassStyle: 'liquid', refraction: 60, glassTint: 0.5, iconStyle: 'default', widgetStyle: 'glass' } },
@@ -195,7 +195,7 @@ PAGES.focus = () => {
   const modes = focusModes();
   const update = (f, patch) => { Object.assign(f, patch); setPref('focusModes', [...modes]); if (S.activeFocus === f.id) setFocus(f.id); };
   return [
-    note('A Focus changes Haven to suit what you’re doing: its own wallpaper and Dock, notifications silenced, widgets shown or hidden. Switch from Control Center or the menu bar.'),
+    note('A Focus changes Haven to suit what you’re doing: its own wallpaper and Dock, notifications silenced, widgets shown or hidden. Switch from Quick Controls or the menu bar.'),
     ...modes.flatMap(f => [
       section(f.name),
       group(

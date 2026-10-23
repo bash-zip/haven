@@ -135,7 +135,7 @@ function renderControlCenter() {
         h('button', { class: 'cc-block cc-square' + (isDark() ? ' on' : ''), onclick: () => { setTheme(isDark() ? 'light' : 'dark'); renderControlCenter(); } },
           h('span', { class: 'cc-tile-icon' }, svg(NAV_ICONS.appearance)), h('span', { text: 'Dark Mode' })),
         h('button', { class: 'cc-block cc-square', onclick: () => { closeOverlays(); call('missionControl', {}); } },
-          h('span', { class: 'cc-tile-icon' }, svg(NAV_ICONS.widgets)), h('span', { text: 'Mission Control' })))),
+          h('span', { class: 'cc-tile-icon' }, svg(NAV_ICONS.widgets)), h('span', { text: 'Overview' })))),
 
     brightness != null && ccSlider('Display', '<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.5" fill="currentColor"/><g stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></g></svg>',
       brightness, null, v => { brightness = v; call('setBrightness', { level: v }).catch(err => toast(err.message)); }),
@@ -263,11 +263,11 @@ function onGesture({ direction, fingers }) {
 
 const ACTIONS = {
   none: ['Nothing', () => {}],
-  mission: ['Mission Control', () => call('missionControl', {})],
-  appexpose: ['App Exposé', () => call('missionControl', { app: true })],
+  mission: ['Overview', () => call('missionControl', {})],
+  appexpose: ['App Windows', () => call('missionControl', { app: true })],
   desktop: ['Show Desktop', () => call('system', { action: 'desktop' })],
-  launchpad: ['Launchpad', () => openLaunchpad()],
-  control: ['Control Center', () => toggleControlCenter()],
+  launchpad: ['App Library', () => openLaunchpad()],
+  control: ['Quick Controls', () => toggleControlCenter()],
   search: ['Search', () => openSpotlight()],
   start: ['Start Menu', () => call('system', { action: 'start' })],
   lock: ['Lock Screen', () => call('system', { action: 'lock' })],
@@ -642,8 +642,8 @@ function goSettingsFromSearch(nav) {
 {
   const baseWindow = MENUS.window;
   MENUS.window = () => [
-    { label: 'Mission Control', hint: 'Ctrl+↑', action: () => call('missionControl', {}) },
-    { label: 'App Exposé', hint: 'Ctrl+↓', action: () => call('missionControl', { app: true }) },
+    { label: 'Overview', hint: 'Ctrl+↑', action: () => call('missionControl', {}) },
+    { label: 'App Windows', hint: 'Ctrl+↓', action: () => call('missionControl', { app: true }) },
     '-',
     { label: 'Tile to Left Half', hint: 'Ctrl+Alt+←', action: () => call('snap', { where: 'left' }) },
     { label: 'Tile to Right Half', hint: 'Ctrl+Alt+→', action: () => call('snap', { where: 'right' }) },

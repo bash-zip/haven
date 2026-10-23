@@ -84,14 +84,14 @@ sealed partial class ShellHost
             var target = WindowTracker.VisibleWindowsBottomUp().LastOrDefault();
             if (target == IntPtr.Zero) { Add("Windows", "Live window previews", null, "No open app to test with. Open one and run the check again."); return; }
             bool ok = MissionControl.CanPreview(_desktop.Handle, target);
-            Add("Windows", "Live window previews", ok, ok ? "Mission Control, Stage Manager and slides can show live windows." : "Windows refused a live preview (DWM).");
+            Add("Windows", "Live window previews", ok, ok ? "Overview, Stage View and slides can show live windows." : "Windows refused a live preview (DWM).");
         });
         Try("Windows", "Spaces", () =>
         {
             var (spaces, current) = VirtualDesktops.Read();
             Add("Windows", "Spaces", spaces.Count > 0, $"{spaces.Count} desktop{(spaces.Count == 1 ? "" : "s")}, on {spaces[current].Name}.");
         });
-        Add("Windows", "Stage Manager", null, _stage?.Enabled == true ? "On." : "Off (turn it on in Control Center).");
+        Add("Windows", "Stage View", null, _stage?.Enabled == true ? "On." : "Off (turn it on in Quick Controls).");
         Try("Windows", "Clipboard history", () =>
             Add("Windows", "Clipboard history", ClipboardHistory.Listening, ClipboardHistory.Listening ? $"Listening; {ClipboardHistory.Count} items saved." : "Windows didn't let Haven watch the clipboard."));
 

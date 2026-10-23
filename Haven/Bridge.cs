@@ -64,6 +64,9 @@ sealed class Bridge
         catch (Exception ex)
         {
             error = ex.Message;
+            // Expected refusals (a bad file, no key yet) are plain messages; anything else gets its stack logged.
+            if (ex is InvalidOperationException) Log.Info($"[{_part}] request {id} refused: {ex.Message}");
+            else Log.Error(_part, ex.ToString());
         }
         _core.PostWebMessageAsJson(JsonSerializer.Serialize(new { id, result, error }, Json.Options));
     }
@@ -144,9 +147,20 @@ sealed class Bridge
             case "setAutostart":
                 ShellHost.Autostart = Bool(args, "on");
                 return ShellHost.Autostart;
-            case "updateStatus": return Updater.Status();
+            case "updateStatus": return await Updater.StatusAsync(Bool(args, "force"));
+            case "installHaven":
+                if (Installer.Install(start: false))
+                {
+                    // Hand over to the installed copy.
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.Combine(Updater.InstallDir, "Haven.exe")) { UseShellExecute = true });
+                    _host.Quit();
+                }
+                return null;
+            case "uninstallHaven":
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.Combine(AppContext.BaseDirectory, "Haven.exe"), "--uninstall") { UseShellExecute = false });
+                return null;
             case "applyUpdate":
-                Updater.ApplyAndRestart(_host.Quit);
+                await Updater.ApplyAndRestartAsync(_host.Quit);
                 return null;
             // ----- Screenshots, idle time, spaces, app menus, tray, Stage Manager -----
             case "screenshot":
@@ -335,6 +349,12 @@ sealed class Bridge
             case "clipSnippet": ClipboardHistory.AddSnippet(Str(args, "text")); return null;
             case "setClipboardHistory": _host.SetClipboardHistory(Bool(args, "on")); return null;
             case "systemCheck": return await _host.RunChecksAsync();
+            case "logError": Log.Error(_part, Str(args, "message")); return null;
+            case "diagnosticReport": return Log.Report(await _host.RunChecksAsync());
+            case "openLogs":
+                Directory.CreateDirectory(Log.Folder);
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{Log.Folder}\"") { UseShellExecute = true });
+                return null;
 
             case "stocks":
                 return await Stocks.GetAsync(args.GetProperty("symbols").EnumerateArray().Select(e => e.GetString() ?? ""));

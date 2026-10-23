@@ -471,8 +471,8 @@ sealed partial class ShellHost
         if (!Reg("Ctrl + Alt + Q (exit)", HotkeyQuit, MOD_CONTROL | MOD_ALT, 0x51))
             _notices.Add("Ctrl + Alt + Q is taken by another app. Exit from the Haven menu instead.");
         // Mission Control and App Exposé, as on a Mac.
-        Reg("Ctrl + Up (Mission Control)", HotkeyMissionControl, MOD_CONTROL, 0x26);
-        Reg("Ctrl + Down (App Exposé)", HotkeyAppExpose, MOD_CONTROL, 0x28);
+        Reg("Ctrl + Up (Overview)", HotkeyMissionControl, MOD_CONTROL, 0x26);
+        Reg("Ctrl + Down (App Windows)", HotkeyAppExpose, MOD_CONTROL, 0x28);
         // Screenshots, as on a Mac (with Ctrl in place of Cmd).
         Reg("Ctrl + Shift + 3 (screenshot)", HotkeyShotFull, MOD_CONTROL | SHIFT, 0x33);
         Reg("Ctrl + Shift + 4 (area screenshot)", HotkeyShotRegion, MOD_CONTROL | SHIFT, 0x34);

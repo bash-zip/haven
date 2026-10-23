@@ -17,14 +17,14 @@ const PARTS = {
   'menubar-volume': ['Volume icon', '#volume-status'],
   'menubar-battery': ['Battery', '#battery'],
   'menubar-search': ['Search icon', '#search-button'],
-  'menubar-control': ['Control Center icon', '#control-button'],
+  'menubar-control': ['Quick Controls icon', '#control-button'],
   'menubar-language': ['Keyboard language', '#lang-button'],
   'menubar-avatar': ['Account picture', '#avatar'],
   'menubar-name': ['Account name', '#account-name'],
   'menubar-clock': ['Clock', '#menubar-clock'],
   // Dock
   'dock': ['Entire Dock', '.dock-wrap, .dock-reveal'],
-  'dock-launchpad': ['Launchpad', '.dock-item[data-tile="launchpad"]'],
+  'dock-launchpad': ['App Library', '.dock-item[data-tile="launchpad"]'],
   'dock-settings': ['Haven Settings', '.dock-item[data-tile="settings"]'],
   'dock-downloads': ['Downloads', '.dock-item[data-tile="downloads"]'],
   'dock-trash': ['Recycle Bin', '.dock-item[data-tile="trash"]'],
@@ -39,7 +39,7 @@ const PARTS = {
   'widget-headers': ['Widget titles', '.widget .w-head'],
 };
 
-const SYSTEM_TILES = { launchpad: 'Launchpad', settings: 'Haven Settings', downloads: 'Downloads', trash: 'Recycle Bin' };
+const SYSTEM_TILES = { launchpad: 'App Library', settings: 'Haven Settings', downloads: 'Downloads', trash: 'Recycle Bin' };
 
 function isPartHidden(id) { return (S.hideParts || []).includes(id); }
 

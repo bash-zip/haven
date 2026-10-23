@@ -238,9 +238,9 @@ const PAGES = {
       row('Start Haven when you sign in', 'Haven becomes your desktop every time you log in to Windows.',
         toggle(env.autostart, v => setAutostart(v))),
       row('Hide the Windows taskbar', 'Haven always puts the taskbar back when you exit.', toggle(S.hideTaskbar, setTaskbarHidden)),
-      row('Use Haven’s app switcher for Alt + Tab', 'One icon per app, like Cmd + Tab on a Mac.',
+      row('Use Haven’s app switcher for Alt + Tab', 'One icon per app, with its windows grouped.',
         toggle(S.appSwitcher, v => { setPref('appSwitcher', v); applyInputSettings(); })),
-      row('Haven takes over Windows shortcuts', 'The Windows key opens Launchpad. Win + Tab, Win + A, Win + N, Win + S, Win + D, Win + arrows, Win + 1–9 and Print Screen go to Haven instead of Windows. Turn off to give them back to Windows.',
+      row('Haven takes over Windows shortcuts', 'The Windows key opens App Library. Win + Tab, Win + A, Win + N, Win + S, Win + D, Win + arrows, Win + 1–9 and Print Screen go to Haven instead of Windows. Turn off to give them back to Windows.',
         toggle(S.windowsKeys !== false, v => { setPref('windowsKeys', v); applyInputSettings(); }))),
     section('Screenshots'),
     group(
@@ -259,12 +259,12 @@ const PAGES = {
     section('Keyboard shortcuts'),
     group(
       row('Search apps, files, settings and maths', null, h('kbd', { text: 'Alt + Space' }), h('kbd', { text: 'Win + S' })),
-      row('Launchpad', null, h('kbd', { text: 'Win' })),
-      row('Control Center · Notification Center', null, h('kbd', { text: 'Win + A' }), h('kbd', { text: 'Win + N' })),
+      row('App Library', null, h('kbd', { text: 'Win' })),
+      row('Quick Controls · Notifications', null, h('kbd', { text: 'Win + A' }), h('kbd', { text: 'Win + N' })),
       row('Open the Nth app in the Dock', null, h('kbd', { text: 'Win + 1 … 9' })),
       row('Switch apps', null, h('kbd', { text: 'Alt + Tab' })),
-      row('Mission Control', 'Every open window at a glance.', h('kbd', { text: 'Ctrl + ↑' }), h('kbd', { text: 'Win + Tab' })),
-      row('App Exposé', 'Windows of the app in front.', h('kbd', { text: 'Ctrl + ↓' })),
+      row('Overview', 'Every open window at a glance.', h('kbd', { text: 'Ctrl + ↑' }), h('kbd', { text: 'Win + Tab' })),
+      row('App Windows', 'Windows of the app in front.', h('kbd', { text: 'Ctrl + ↓' })),
       row('Tile window left / right / top / bottom', null, h('kbd', { text: 'Ctrl + Alt + Arrows' })),
       row('Tile to a quarter', null, h('kbd', { text: 'Ctrl + Alt + U / I / J / K' })),
       row('Fill screen · Center', null, h('kbd', { text: 'Ctrl + Alt + Enter' }), h('kbd', { text: 'Ctrl + Alt + C' })),
@@ -274,7 +274,7 @@ const PAGES = {
       row('Lock screen', null, h('kbd', { text: 'Ctrl + L' })),
       row('Exit Haven', 'Your open apps keep running.', h('kbd', { text: 'Ctrl + Alt + Q' })),
       row('Rename a desktop icon', null, h('kbd', { text: 'F2' })),
-      row('Close Launchpad, search or a window', null, h('kbd', { text: 'Esc' }))),
+      row('Close App Library, search or a window', null, h('kbd', { text: 'Esc' }))),
     section('Maintenance'),
     group(
       row('Haven’s data folder', 'Settings, icon cache and wallpapers you added.', button('Open', () => openFolder(env.dataDir))),
@@ -361,7 +361,7 @@ const PAGES = {
       row('Magnify icons on hover', null, toggle(S.magnify, v => setPref('magnify', v))),
       row('Hide the Dock automatically', 'Move the pointer to the bottom edge to bring it back.',
         segmented([['off', 'Never'], ['smart', 'When a window overlaps'], ['always', 'Always']], S.dockAutohide, v => setPref('dockAutohide', v))),
-      row('Apps in the Dock', 'Right-click any app in Launchpad to keep it in the Dock.',
+      row('Apps in the Dock', 'Right-click any app in App Library to keep it in the Dock.',
         button('Reset Dock', () => { S.dock = null; loadApps(); toast('Dock reset.'); }), button('Rescan apps', rescanApps))),
     section('Desktop'),
     group(
@@ -370,12 +370,12 @@ const PAGES = {
       row('Arrange icons', 'Drag icons anywhere. Clean Up puts them back in order.', button('Clean Up', () => setPref('iconPos', {}))),
       row('Use Stacks', 'Group desktop files by kind: images, documents, PDFs and more.', toggle(S.useStacks, v => setPref('useStacks', v))),
       row('Show widgets', null, toggle(S.showWidgets, v => setPref('showWidgets', v)))),
-    section('Stage Manager'),
-    group(row('Stage Manager', 'Keep the app you’re using in the centre, with your other recent apps as live previews on the left. Click a preview to swap.',
+    section('Stage View'),
+    group(row('Stage View', 'Keep the app you’re using in the centre, with your other recent apps as live previews on the left. Click a preview to swap.',
       toggle(!!S.stageManager, v => setStageManager(v)))),
     section('Spaces'),
     group(
-      row('Spaces', 'Separate desktops for different tasks. They appear along the top of Mission Control; click + to add one.', button('Add a Space', () => call('newDesktop'))),
+      row('Spaces', 'Separate desktops for different tasks. They appear along the top of Overview; click + to add one.', button('Add a Space', () => call('newDesktop'))),
       row('Switch spaces', 'Swipe left or right with four fingers, or use these keys.', h('kbd', { text: 'Ctrl + Win + ← / →' }))),
     section('Hot corners'),
     group(h('div', { class: 'corner-grid' },
@@ -544,7 +544,7 @@ const PAGES = {
     css.value = S.customCss || '';
 
     return [
-      note('Change any icon, rename the Dock’s built-in items, and hide anything you don’t want to see. Tip: right-click any icon in the Dock or Launchpad, or the Windows logo, to change its picture.'),
+      note('Change any icon, rename the Dock’s built-in items, and hide anything you don’t want to see. Tip: right-click any icon in the Dock or App Library, or the Windows logo, to change its picture.'),
 
       section('Icons'),
       group(
@@ -552,7 +552,7 @@ const PAGES = {
           iconCell('logo', null), button('Change…', () => chooseIcon('logo')), customIcon('logo') && button('Reset', () => resetIcon('logo'))),
         appOverrides.length
           ? appOverrides.map(k => { const app = appById.get(k.slice(4)); return row(app?.name || 'App', 'Custom app icon', iconCell(k, null), button('Change…', () => chooseIcon(k)), button('Reset', () => resetIcon(k))); })
-          : row('App icons', 'Right-click any app in the Dock or Launchpad and choose Change Icon. Works with PNG, SVG, JPEG, ICO, WebP and GIF.')),
+          : row('App icons', 'Right-click any app in the Dock or App Library and choose Change Icon. Works with PNG, SVG, JPEG, ICO, WebP and GIF.')),
 
       section('Dock items'),
       group(tileRows),
@@ -630,7 +630,7 @@ const PAGES = {
   trackpad: () => [
     section('Gestures'),
     group(
-      row('Swipe between apps', 'Swipe left or right to move through your open apps. Swipe up for Mission Control, down for App Exposé. With the other number of fingers, swipe left or right to change spaces. Tap with three fingers to search, four for Notification Center.',
+      row('Swipe between apps', 'Swipe left or right to move through your open apps. Swipe up for Overview, down for App Windows. With the other number of fingers, swipe left or right to change spaces. Tap with three fingers to search, four for Notifications.',
         toggle(S.gestures, v => { setPref('gestures', v); applyInputSettings(); })),
       row('Fingers', null, segmented([[3, 'Three'], [4, 'Four']], S.gestureFingers, v => { setPref('gestureFingers', v); applyInputSettings(); }))),
     note(touchpadDetected ? 'Your precision touchpad is working with Haven.' : 'Haven detects your touchpad the first time you use it.'),
@@ -642,7 +642,7 @@ const PAGES = {
     section('Haven sounds'),
     group(
       row('Play a chime when Haven starts', null, toggle(S.startupSound, v => setPref('startupSound', v))),
-      row('Interface sounds', 'Soft clicks for the switcher, Dock, Control Center and notifications.', toggle(S.uiSounds, v => setPref('uiSounds', v))),
+      row('Interface sounds', 'Soft clicks for the switcher, Dock, Quick Controls and notifications.', toggle(S.uiSounds, v => setPref('uiSounds', v))),
       row('Preview', null, button('Startup chime', () => Sound.play('startup')), button('Click', () => Sound.play('pop')))),
     section('Do Not Disturb'),
     group(row('Do Not Disturb', 'Silences Haven’s sounds, notifications and bouncing Dock icons.', toggle(S.dnd, v => setPref('dnd', v)))),
@@ -659,11 +659,14 @@ const PAGES = {
     note('Haven is a desktop that runs on top of Windows. Windows stays your operating system, and your apps keep running when you exit. Not affiliated with Apple or Microsoft.'),
     section('Installation'),
     group(
-      row(updateInfo?.installed ? 'Installed' : 'Running from a development build', updateInfo?.location || ''),
+      row(updateInfo?.installed ? `Installed · version ${updateInfo.version}` : updateInfo?.dev ? `Development build · version ${updateInfo?.version || ''}` : 'Not installed', updateInfo?.location || ''),
       updateInfo?.installed
-        ? row(updateInfo.available ? 'An update is ready' : 'Haven is up to date', updateInfo.source ? `Updates come from ${updateInfo.source}` : null,
-            updateInfo.available ? button('Update and Restart', () => call('applyUpdate'), true) : button('Check Again', () => checkForUpdate(false)))
-        : row('Install Haven', 'Run install.ps1 in the Haven project folder. It installs Haven for your account with a Start menu entry, and later runs update it.')),
+        ? row(updateInfo.available ? `Haven ${updateInfo.latest || ''} is ready` : 'Haven is up to date',
+            updateInfo.error || (updateInfo.available && updateInfo.notes) || (updateInfo.source ? 'Haven checks for updates on its own every few hours.' : 'This copy has no update feed.'),
+            updateInfo.available ? button('Update and Restart', () => call('applyUpdate').catch(err => toast(err.message)), true) : button('Check Now', () => checkForUpdate(false)))
+        : row('Install Haven', updateInfo?.dev ? 'Run release.ps1 to build an installable copy, or install.ps1 to install this build.' : 'Installs Haven for your account, with a Start menu entry, updates and an uninstaller.',
+            !updateInfo?.dev && button('Install…', () => call('installHaven').catch(err => toast(err.message)), true)),
+      updateInfo?.installed && row('Uninstall Haven', 'Puts your taskbar and Windows settings back and removes Haven. You can keep your settings for later.', button('Uninstall…', () => call('uninstallHaven').catch(err => toast(err.message))))),
     section('Credits'),
     group(row('Weather', 'Open-Meteo.com, under CC BY 4.0.'), row('Wallpapers', 'Haven’s waves are generated on your PC. Windows wallpapers come from your Windows installation.')),
   ],

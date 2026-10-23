@@ -55,7 +55,7 @@ static class ClaudeAsk
             {
                 new()
                 {
-                    Text = "You answer quick questions typed into the search box of Haven, a Mac-style desktop for Windows. " +
+                    Text = "You answer quick questions typed into the search box of Haven, a calm, customizable desktop for Windows. " +
                            "Reply in a few short sentences or a brief list. Plain text only: no headings, no tables, no markdown " +
                            "beyond simple '-' bullets. If the question needs current information you may not have, say so briefly. " +
                            $"Today is {DateTime.Now:dddd d MMMM yyyy}. The user is on Windows {Environment.OSVersion.Version}.",
