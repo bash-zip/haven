@@ -6,5 +6,11 @@ release/
 *.user
 .vs/
 # Local tools and secrets
-.claude/settings.local.json
+.claude/
+.zcode/
 *.key
+.debug
+Setup/payload.zip
+Setup/bin/
+Setup/obj/
+release/
