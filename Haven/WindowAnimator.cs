@@ -30,8 +30,12 @@ sealed class WindowAnimator : Window
     bool _rendering, _minimizing;
     IntPtr _target;
     // Windows we're moving ourselves: their minimize/restore events are ours, not the user's.
-    readonly Dictionary<IntPtr, DateTime> _ignoreUntil = new();
-    void Ignore(IntPtr h) => _ignoreUntil[h] = DateTime.UtcNow.AddMilliseconds(1200);
+    static readonly Dictionary<IntPtr, DateTime> _ignoreUntil = new();
+    static void Ignore(IntPtr h) { lock (_ignoreUntil) _ignoreUntil[h] = DateTime.UtcNow.AddMilliseconds(1200); }
+    int _generation;
+
+    /// <summary>Haven is about to minimize/restore this window itself (Show Desktop, Stage View): don't animate it.</summary>
+    public static void Skip(IntPtr h) => Ignore(h);
 
     public bool Enabled { get; set; } = true;
 
@@ -51,6 +55,7 @@ sealed class WindowAnimator : Window
         Height = SystemParameters.PrimaryScreenHeight;
         Background = new SolidColorBrush(Color.FromRgb(12, 12, 14));
         _hwnd = new WindowInteropHelper(this).EnsureHandle();
+        ScreenFit.CoverMonitor(this);
         Native.SetExStyle(_hwnd, Native.WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT, 0);
         _proc = OnWinEvent;
         _hook = SetWinEventHook(EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZEEND, IntPtr.Zero, _proc, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
@@ -59,8 +64,13 @@ sealed class WindowAnimator : Window
     void OnWinEvent(IntPtr hook, uint ev, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
     {
         if (idObject != 0 || hwnd == IntPtr.Zero || !Enabled) return;
-        if (_ignoreUntil.TryGetValue(hwnd, out var until) && DateTime.UtcNow < until) return;
+        lock (_ignoreUntil)
+        {
+            if (_ignoreUntil.TryGetValue(hwnd, out var until) && DateTime.UtcNow < until) return;
+            foreach (var old in _ignoreUntil.Where(p => p.Value < DateTime.UtcNow).Select(p => p.Key).ToList()) _ignoreUntil.Remove(old);
+        }
         if (_rendering) return; // one at a time
+        if (!WindowTracker.IsAppWindow(hwnd)) return; // only real app windows, not helpers or tool windows
         Dispatcher.BeginInvoke(() =>
         {
             if (ev == EVENT_SYSTEM_MINIMIZESTART) Minimize(hwnd);
@@ -76,6 +86,7 @@ sealed class WindowAnimator : Window
 
     void Minimize(IntPtr hwnd)
     {
+        if (_rendering) return;
         var icon = IconRect(hwnd);
         if (icon == null) return;
         var place = new WINDOWPLACEMENT { length = Marshal.SizeOf<WINDOWPLACEMENT>() };
@@ -103,6 +114,7 @@ sealed class WindowAnimator : Window
 
     void Restore(IntPtr hwnd)
     {
+        if (_rendering) return;
         var icon = IconRect(hwnd);
         if (icon == null) return;
         Native.GetWindowRect(hwnd, out var rect);
@@ -142,8 +154,16 @@ sealed class WindowAnimator : Window
 
     Native.RECT Local(Native.RECT r) => new(r.Left - _monitor.Left, r.Top - _monitor.Top, r.Right - _monitor.Left, r.Bottom - _monitor.Top);
 
+    readonly System.Windows.Threading.DispatcherTimer _safety = new() { Interval = TimeSpan.FromMilliseconds(1500) };
+    bool _safetyHooked;
+
     void Begin(TimeSpan duration)
     {
+        // Whatever happens, never leave the overlay up: it sits above the windows and would block clicks.
+        if (!_safetyHooked) { _safetyHooked = true; _safety.Tick += (_, _) => { _safety.Stop(); ForceHide(); }; }
+        _safety.Stop();
+        _safety.Start();
+        _generation++;
         _duration = duration;
         _start = TimeSpan.Zero;
         if (_moving != null) Place(_moving, _from, 255);
@@ -181,15 +201,30 @@ sealed class WindowAnimator : Window
             Ignore(_target);
             Native.ShowWindow(_target, SW_SHOWMINNOACTIVE);
         }
-        // Give the real windows a frame to draw before lifting the overlay.
+        // Give the real windows a frame to draw before lifting the overlay
+        // (unless another animation has started meanwhile: then the overlay is its).
+        int gen = _generation;
         Dispatcher.BeginInvoke(() =>
         {
+            if (gen != _generation || _rendering) return;
             foreach (var t in _thumbs) DwmUnregisterThumbnail(t.Handle);
             _thumbs.Clear();
             _moving = null;
             Native.ShowWindow(_hwnd, Native.SW_HIDE);
             _target = IntPtr.Zero;
+            _safety.Stop();
         }, System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    void ForceHide()
+    {
+        if (_rendering) { CompositionTarget.Rendering -= OnFrame; _rendering = false; }
+        if (_minimizing && _target != IntPtr.Zero && !IsIconic(_target)) { Ignore(_target); Native.ShowWindow(_target, SW_SHOWMINNOACTIVE); }
+        foreach (var t in _thumbs) DwmUnregisterThumbnail(t.Handle);
+        _thumbs.Clear();
+        _moving = null;
+        _target = IntPtr.Zero;
+        Native.ShowWindow(_hwnd, Native.SW_HIDE);
     }
 
     public void Shutdown()
@@ -250,6 +285,7 @@ sealed class WindowAnimator : Window
     }
 
     [DllImport("user32.dll")] static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr mod, WinEventDelegate proc, uint pid, uint tid, uint flags);
+    [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
     [DllImport("user32.dll")] static extern bool UnhookWinEvent(IntPtr hook);
     [DllImport("user32.dll")] static extern bool GetWindowPlacement(IntPtr h, ref WINDOWPLACEMENT p);
     [DllImport("user32.dll", SetLastError = true)] static extern bool SystemParametersInfo(uint action, uint param, ref ANIMATIONINFO info, uint winIni);

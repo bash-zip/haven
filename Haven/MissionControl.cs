@@ -13,7 +13,7 @@ namespace Haven;
 
 /// <summary>
 /// Mission Control: every open window as a live preview over a blurred copy of the screen.
-/// Previews are real DWM thumbnails (the same technology as taskbar previews), so video and
+/// Uses real DWM thumbnails for previews (same tech as taskbar previews), so video and
 /// animations keep playing. Click one to switch to it; click empty space or press Esc to leave.
 /// With an app filter it becomes App Exposé (only that app's windows).
 /// </summary>
@@ -83,6 +83,7 @@ sealed class MissionControl : Window
 
         SourceInitialized += (_, _) =>
         {
+            ScreenFit.CoverMonitor(this); // exact physical rect before any layout math
             _hwnd = new WindowInteropHelper(this).Handle;
             _scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
             foreach (var w in list) Add(w);

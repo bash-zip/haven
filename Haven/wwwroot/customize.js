@@ -60,11 +60,14 @@ function styleTag(id) {
 
 /** Applies hidden parts, the custom logo, and custom CSS. Runs in both layers. */
 function applyCustomization() {
+  document.documentElement.dataset.dockSkin = S.dockSkin || 'glass';
+  document.documentElement.dataset.dockShape = S.dockShape || 'rounded';
   styleTag('haven-hidden-parts').textContent = (S.hideParts || [])
     .filter(id => PARTS[id]).map(id => `${PARTS[id][1]} { display: none !important; }`).join('\n');
   styleTag('haven-custom-css').textContent = S.customCss || '';
 
   if (IS_SHELL) {
+    applyBarLayout();
     const logo = $('#logo-menu');
     const url = S.iconOverrides?.logo;
     const current = logo.querySelector('img')?.getAttribute('src');

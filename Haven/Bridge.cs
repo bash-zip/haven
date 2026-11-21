@@ -42,8 +42,18 @@ sealed class Bridge
         _core = core;
     }
 
-    public void Emit(string name, object? data = null) =>
-        _core.PostWebMessageAsJson(JsonSerializer.Serialize(new { @event = name, data }, Json.Options));
+    public void Emit(string name, object? data = null)
+    {
+        // A web view being torn down (display change, quit, crash recovery) can still be
+        // poked by timers and other pages; that must never take the desktop down with it.
+        try { _core.PostWebMessageAsJson(JsonSerializer.Serialize(new { @event = name, data }, Json.Options)); }
+        catch (Exception ex) when (IsDisposed(ex)) { Log.Info($"[{_part}] emit '{name}' skipped: web view closed"); }
+    }
+
+    /// <summary>True for exceptions from touching a WebView2 that has already been disposed.</summary>
+    public static bool IsDisposed(Exception ex) =>
+        ex.Message.Contains("CoreWebView2 members cannot be accessed")
+        || (ex is System.Runtime.InteropServices.COMException ce && ce.HResult == unchecked((int)0x8007139F));
 
     public async void OnMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
@@ -68,7 +78,8 @@ sealed class Bridge
             if (ex is InvalidOperationException) Log.Info($"[{_part}] request {id} refused: {ex.Message}");
             else Log.Error(_part, ex.ToString());
         }
-        _core.PostWebMessageAsJson(JsonSerializer.Serialize(new { id, result, error }, Json.Options));
+        try { _core.PostWebMessageAsJson(JsonSerializer.Serialize(new { id, result, error }, Json.Options)); }
+        catch (Exception ex) when (IsDisposed(ex)) { Log.Info($"[{_part}] reply {id} skipped: web view closed"); }
     }
 
     async Task<object?> HandleAsync(string type, JsonElement args, List<string> files)
@@ -137,7 +148,10 @@ sealed class Bridge
                 if (args.TryGetProperty("plates", out var plateList))
                     foreach (var p in plateList.EnumerateArray())
                         plates.Add(new GlassPlates.Plate(p[0].GetInt32(), p[1].GetInt32(), p[2].GetInt32(), p[3].GetInt32(), p[4].GetInt32()));
-                _host.SetGlass(plates);
+                uint? tint = null;
+                if (args.TryGetProperty("tint", out var tn) && tn.ValueKind == JsonValueKind.Array && tn.GetArrayLength() == 4)
+                    tint = (uint)(Math.Clamp(tn[3].GetInt32(), 1, 255) << 24 | Math.Clamp(tn[2].GetInt32(), 0, 255) << 16 | Math.Clamp(tn[1].GetInt32(), 0, 255) << 8 | Math.Clamp(tn[0].GetInt32(), 0, 255));
+                _host.SetGlass(plates, tint);
                 return null;
             case "setDockRect":
                 _host.SetDockRect(args.TryGetProperty("rect", out var dr) && dr.ValueKind == JsonValueKind.Array
@@ -162,10 +176,7 @@ sealed class Bridge
             case "applyUpdate":
                 await Updater.ApplyAndRestartAsync(_host.Quit);
                 return null;
-            // ----- Screenshots, idle time, spaces, app menus, tray, Stage Manager -----
-            case "screenshot":
-                _host.TakeScreenshot(Bool(args, "region"));
-                return null;
+            // ----- Idle time, spaces, app menus, tray, Stage Manager -----
             case "idle":
                 var info = new LASTINPUTINFO { cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<LASTINPUTINFO>() };
                 GetLastInputInfo(ref info);
@@ -208,7 +219,8 @@ sealed class Bridge
                 return null;
             case "reserve":
                 if (_part.StartsWith("secondary")) _host.ReserveSecondary(_part, args.GetProperty("top").GetInt32(), args.GetProperty("bottom").GetInt32());
-                else _host.Reserve(args.GetProperty("top").GetInt32(), args.GetProperty("bottom").GetInt32());
+                else _host.Reserve(args.GetProperty("top").GetInt32(), args.GetProperty("bottom").GetInt32(),
+                    args.TryGetProperty("left", out var l) ? l.GetInt32() : 0, args.TryGetProperty("right", out var r) ? r.GetInt32() : 0);
                 return null;
             case "setZoom":
                 _host.SetZoom(_part, args.GetProperty("zoom").GetDouble());
@@ -229,12 +241,19 @@ sealed class Bridge
                 Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true });
                 return null;
             case "windows":
+                var fgWindow = new IntPtr(WindowTracker.Foreground());
+                // Clicking the wallpaper makes Progman/WorkerW the foreground; they cover the
+                // monitor but are the desktop, not a fullscreen app.
                 return new
                 {
                     windows = await _host.Windows.ListAsync(),
                     foreground = WindowTracker.Foreground(),
                     language = SystemInfo.InputLanguage(),
+                    fullscreen = Native.CoversPrimaryMonitor(fgWindow) && !ShellHost.IsShellWindow(fgWindow),
                 };
+            case "activateApp":
+                WindowTracker.ActivateApp(args.GetProperty("hwnd").GetInt64());
+                return null;
             case "focus":
                 WindowTracker.Focus(args.GetProperty("hwnd").GetInt64());
                 return null;
@@ -347,6 +366,7 @@ sealed class Bridge
             case "clipDelete": ClipboardHistory.Delete(Str(args, "id")); return null;
             case "clipClear": ClipboardHistory.Clear(Bool(args, "pinned")); return null;
             case "clipSnippet": ClipboardHistory.AddSnippet(Str(args, "text")); return null;
+            case "clipCopy": return ClipboardHistory.Copy(Str(args, "id"));
             case "setClipboardHistory": _host.SetClipboardHistory(Bool(args, "on")); return null;
             case "systemCheck": return await _host.RunChecksAsync();
             case "logError": Log.Error(_part, Str(args, "message")); return null;
@@ -413,8 +433,6 @@ sealed class Bridge
                 var dialog = new OpenFolderDialog { Title = args.TryGetProperty("title", out var t) ? t.GetString() : "Choose a folder" };
                 return dialog.ShowDialog() == true ? dialog.FolderName : null;
             }
-            case "screenshotFolder":
-                return Screenshots.DefaultFolder;
             case "setInput":
                 _host.SetInput(Bool(args, "gestures"), args.TryGetProperty("fingers", out var fg) ? fg.GetInt32() : 3, Bool(args, "switcher"),
                     !args.TryGetProperty("windowsKeys", out var wk) || wk.ValueKind != System.Text.Json.JsonValueKind.False);
@@ -433,8 +451,13 @@ sealed class Bridge
                 return null;
             case "pickWallpaper":
                 return PickWallpaper();
+            case "pickLiveWallpaper":
+                return PickLiveWallpaper();
             case "quit":
                 _host.Quit();
+                return null;
+            case "restartHaven":
+                _host.Restart();
                 return null;
 
             default:
@@ -487,6 +510,20 @@ sealed class Bridge
         };
         if (dialog.ShowDialog() != true) return null;
         var target = Path.Combine(Paths.Wallpapers, Guid.NewGuid().ToString("n") + Path.GetExtension(dialog.FileName));
+        File.Copy(dialog.FileName, target);
+        return Paths.Url(target);
+    }
+
+    string? PickLiveWallpaper()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Choose a live wallpaper video",
+            Filter = "Video files|*.mp4;*.webm;*.avi;*.mov;*.wmv;*.m4v",
+            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
+        };
+        if (dialog.ShowDialog() != true) return null;
+        var target = Path.Combine(Paths.Wallpapers, Guid.NewGuid().ToString("n") + Path.GetExtension(dialog.FileName).ToLowerInvariant());
         File.Copy(dialog.FileName, target);
         return Paths.Url(target);
     }

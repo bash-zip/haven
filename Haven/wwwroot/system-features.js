@@ -81,48 +81,6 @@ async function spacesMenuItems() {
   ];
 }
 
-/* ---------- Screenshots ---------- */
-
-let shotTimer;
-
-function onScreenshot({ path, url }) {
-  Sound.play('shutter');
-  if (!path) {
-    // Clipboard only: nothing was saved, so the preview just confirms the copy.
-    notify('Screenshot copied', 'Paste it anywhere with Ctrl + V.', { image: url });
-    const el = $('#shot-preview');
-    el.replaceChildren(h('img', { src: url, alt: '' }));
-    el.onclick = () => { el.hidden = true; updateRegion(); };
-    el.oncontextmenu = e => e.preventDefault();
-    el.hidden = false;
-    el.classList.remove('leaving');
-    updateRegion();
-    clearTimeout(shotTimer);
-    shotTimer = setTimeout(() => { el.classList.add('leaving'); setTimeout(() => { el.hidden = true; updateRegion(); }, 300); }, 4000);
-    return;
-  }
-  notify('Screenshot saved', path.split('\\').pop(), { path, image: url });
-  // A small floating preview in the corner, as on a Mac. Click to open; it slides away on its own.
-  const el = $('#shot-preview');
-  el.replaceChildren(h('img', { src: url, alt: '' }));
-  el.onclick = () => { el.hidden = true; updateRegion(); call('openPath', { path }); };
-  el.oncontextmenu = e => {
-    e.preventDefault();
-    showMenu(e.clientX, e.clientY, [
-      { label: 'Open', action: () => call('openPath', { path }) },
-      { label: 'Show in File Explorer', action: () => call('revealPath', { path }) },
-    ]);
-  };
-  el.hidden = false;
-  el.classList.remove('leaving');
-  updateRegion();
-  clearTimeout(shotTimer);
-  shotTimer = setTimeout(() => {
-    el.classList.add('leaving');
-    setTimeout(() => { el.hidden = true; updateRegion(); }, 300);
-  }, 5000);
-}
-
 /* ---------- Notification Center ---------- */
 
 const notifications = [];
@@ -275,13 +233,6 @@ async function checkForUpdate(ask) {
     { label: 'Spaces…', action: async () => { const r = $('[data-menu="window"]').getBoundingClientRect(); showMenu(r.left, r.bottom + 3, await spacesMenuItems()); } },
     ...baseWindow().slice(2),
   ];
-  const baseFile = MENUS.file;
-  MENUS.file = () => [
-    ...baseFile(),
-    '-',
-    { label: 'Screenshot of Screen', hint: 'Ctrl+Shift+3', action: () => setTimeout(() => call('screenshot', { region: false }), 250) },
-    { label: 'Screenshot of Area…', hint: 'Ctrl+Shift+4', action: () => setTimeout(() => call('screenshot', { region: true }), 250) },
-  ];
 }
 
 ACTIONS.notifications = ['Notifications', () => toggleNotificationCenter()];
@@ -319,7 +270,6 @@ ACTIONS.saver = ['Start Screen Saver', () => startSaver()];
   // eslint-disable-next-line no-global-assign
   onHostEvent = function (name, data) {
     if (name === 'tray') { trayIcons = data || []; renderTray(); return; }
-    if (name === 'screenshot') { onScreenshot(data); return; }
     return baseEvent(name, data);
   };
   const baseActive = renderActiveApp;

@@ -37,9 +37,11 @@ const SETTINGS_NAV = [
   { id: 'customize', label: 'Customize', icon: 'brush', color: '#e0559a', keys: 'icon icons logo launchpad hide show menu bar dock desktop label rename css custom picture png svg ico' },
   { id: 'desktop', label: 'Desktop & Dock', icon: 'desktop', color: '#6c5ce7', keys: 'dock size magnify hide autohide icons desktop clean stacks hot corners mission control snapping tile' },
   { id: 'wallpaper', label: 'Wallpaper', icon: 'image', color: '#2c9bd6', keys: 'background picture image photo' },
+  { id: 'profiles', label: 'Desktop Looks', icon: 'appearance', color: '#8b5cf6', keys: 'profile preset save export import share layout theme desktop look' },
   '-',
   { id: 'widgets', label: 'Widgets', icon: 'widgets', color: '#2fa57a', keys: 'widget style tint solid batteries clock calendar weather reminders now playing media' },
-  { id: 'menubar', label: 'Menu Bar', icon: 'menubar', color: '#5d6d82', keys: 'clock 24 hour seconds date now playing island language exit' },
+  { id: 'controlcenter', label: 'Control Center', icon: 'menubar', color: '#697b91', keys: 'quick controls volume brightness wifi bluetooth appearance control center panel' },
+  { id: 'menubar', label: 'Menu Bar', icon: 'menubar', color: '#5d6d82', keys: 'clock 24 hour seconds date style binary analog dots split islands floating now playing island language exit' },
   { id: 'displays', label: 'Displays', icon: 'display', color: '#3b7ff5', keys: 'scale scaling size interface resolution zoom' },
   { id: 'weather', label: 'Weather', icon: 'cloud', color: '#3aa5f2', keys: 'location city units celsius fahrenheit' },
   { id: 'lock', label: 'Lock Screen', icon: 'lock', color: '#3a3a3e', keys: 'lock password ctrl l security sign in' },
@@ -94,6 +96,7 @@ function setPref(key, value) {
   save();
   applyTheme();
   applyScale();
+  applyCustomization(); // bar layout, hidden parts, custom icons (menu-bar toggles live here too)
   renderDock(true);
   refreshSettingsPage();
 }
@@ -118,6 +121,7 @@ function buildSettingsWindow() {
   const search = h('input', { placeholder: 'Search settings', value: settingsQuery, id: 'sw-search' });
   search.addEventListener('input', () => {
     settingsQuery = search.value;
+    if (settingsQuery.trim().length >= 2) { settingsPage = '__search'; renderSettingsNav(); refreshSettingsPage(); return; }
     const first = filteredNav().find(n => n !== '-' && !n.ext);
     if (first && !filteredNav().some(n => n.id === settingsPage)) settingsPage = first.id;
     renderSettingsNav();
@@ -191,9 +195,56 @@ function goSettings(id) {
   $('#sw-page')?.scrollTo(0, 0);
 }
 
+/** Every settings row across every page, indexed once for search. */
+let searchIndexCache = null;
+function searchIndex() {
+  if (searchIndexCache) return searchIndexCache;
+  const index = [];
+  for (const item of SETTINGS_NAV) {
+    if (item === '-' || item.ext || !PAGES[item.id]) continue;
+    try {
+      const holder = document.createElement('div');
+      holder.append(...PAGES[item.id]().filter(Boolean));
+      let section = '';
+      holder.querySelectorAll('.sw-section, .sw-row').forEach(el => {
+        if (el.classList.contains('sw-section')) { section = el.textContent.trim(); return; }
+        const title = el.querySelector?.('.sw-row-title')?.textContent.trim();
+        if (!title) return;
+        index.push({ page: item.id, pageLabel: item.label, section, title,
+          desc: el.querySelector?.('.sw-row-desc')?.textContent.trim() || '', el });
+      });
+    } catch { /* a page that fails to render offline simply isn't searchable */ }
+  }
+  searchIndexCache = index;
+  return index;
+}
+
 function refreshSettingsPage() {
   if (!settingsOpen()) return;
   const page = $('#sw-page');
+  if (settingsPage === '__search') {
+    const q = settingsQuery.trim().toLowerCase();
+    const hits = !q ? [] : searchIndex().filter(r =>
+      r.title.toLowerCase().includes(q) || r.desc.toLowerCase().includes(q) || r.section.toLowerCase().includes(q)).slice(0, 40);
+    $('#sw-title').textContent = 'Search';
+    page.replaceChildren(
+      h('div', { class: 'sw-page-head' }, navIcon({ icon: 'gear', color: '#8e8e93' }), h('h3', { text: 'Search' })),
+      h('div', { class: 'sw-note', text: hits.length ? `${hits.length} matching setting${hits.length === 1 ? '' : 's'}` : 'Nothing matches. Try a shorter word.' }),
+      ...hits.map(r => h('button', { class: 'sw-search-hit', onclick: () => {
+        goSettings(r.page);
+        requestAnimationFrame(() => {
+          const row = [...document.querySelectorAll('#sw-page .sw-row')].find(x => x.querySelector('.sw-row-title')?.textContent.trim() === r.title);
+          row?.scrollIntoView({ block: 'center' });
+          row?.classList.add('search-hit');
+          setTimeout(() => row?.classList.remove('search-hit'), 1600);
+        });
+      } },
+        h('div', { class: 'sw-row-text' },
+          h('div', { class: 'sw-row-title', text: r.title }),
+          h('div', { class: 'sw-row-desc', text: [r.section, r.pageLabel].filter(Boolean).join(' · ') + (r.desc ? ' — ' + r.desc : '') })),
+        h('span', { class: 'sw-search-go', text: '→' }))));
+    return;
+  }
   const item = SETTINGS_NAV.find(n => n.id === settingsPage) || SETTINGS_NAV[0];
   $('#sw-title').textContent = item.label;
   const scroll = page.scrollTop;
@@ -242,17 +293,6 @@ const PAGES = {
         toggle(S.appSwitcher, v => { setPref('appSwitcher', v); applyInputSettings(); })),
       row('Haven takes over Windows shortcuts', 'The Windows key opens App Library. Win + Tab, Win + A, Win + N, Win + S, Win + D, Win + arrows, Win + 1–9 and Print Screen go to Haven instead of Windows. Turn off to give them back to Windows.',
         toggle(S.windowsKeys !== false, v => { setPref('windowsKeys', v); applyInputSettings(); }))),
-    section('Screenshots'),
-    group(
-      row('Save screenshots to', S.screenshotSave && !['pictures', 'clipboard'].includes(S.screenshotSave) ? S.screenshotSave : 'Every screenshot is also copied, ready to paste.',
-        segmented([['pictures', 'Pictures › Screenshots'], ['clipboard', 'Clipboard only'], ['custom', 'Other folder…']],
-          ['pictures', 'clipboard'].includes(S.screenshotSave || 'pictures') ? (S.screenshotSave || 'pictures') : 'custom',
-          async v => {
-            if (v !== 'custom') { setPref('screenshotSave', v); return; }
-            const folder = await call('pickFolder', { title: 'Save screenshots to' }).catch(() => null);
-            if (folder) setPref('screenshotSave', folder);
-            rerenderSettings();
-          }))),
     section('Exit'),
     group(row('Exit Haven', 'Go back to the regular Windows desktop and taskbar. Your open apps keep running. Shortcut: Ctrl + Alt + Q.',
       button('Exit Haven', () => call('quit'), true))),
@@ -269,8 +309,7 @@ const PAGES = {
       row('Tile to a quarter', null, h('kbd', { text: 'Ctrl + Alt + U / I / J / K' })),
       row('Fill screen · Center', null, h('kbd', { text: 'Ctrl + Alt + Enter' }), h('kbd', { text: 'Ctrl + Alt + C' })),
       row('Quick Look the selected desktop file', null, h('kbd', { text: 'Space' })),
-      row('Screenshot of the screen', 'Saved to your Desktop and copied.', h('kbd', { text: 'Ctrl + Shift + 3' })),
-      row('Screenshot of an area', 'Drag to choose. Esc cancels.', h('kbd', { text: 'Ctrl + Shift + 4' })),
+      row('Screenshot', 'The Windows Snipping Tool handles screenshots.', h('kbd', { text: 'Win + Shift + S' })),
       row('Lock screen', null, h('kbd', { text: 'Ctrl + L' })),
       row('Exit Haven', 'Your open apps keep running.', h('kbd', { text: 'Ctrl + Alt + Q' })),
       row('Rename a desktop icon', null, h('kbd', { text: 'F2' })),
@@ -298,7 +337,11 @@ const PAGES = {
         frame = h('div', { class: 'theme-prev' }, h('div', { class: 'tp-win', style: `--p: ${p}; --p-line: ${line}; opacity: ${def.alpha ? 0.75 : 1}` },
           h('div', { class: 'tp-side' }), h('div', { class: 'tp-main' }, h('i'), h('i'), h('i'))), h('div', { class: 'tp-dock', style: `--p: ${p}` }));
       }
-      return pickCard(def.label, frame, S.theme === id, () => setPref('theme', id));
+      return pickCard(def.label, frame, S.theme === id, () => {
+        // Glassy themes only read as glassy if the widgets aren't forced solid.
+        if ((id === 'glass' || id === 'transparent') && S.widgetStyle === 'solid') setPref('widgetStyle', 'glass');
+        setPref('theme', id);
+      });
     });
 
     const customHex = /^#[0-9a-f]{6}$/i.test(S.accent) ? S.accent : accentHex();
@@ -359,10 +402,20 @@ const PAGES = {
     group(
       row('Size', null, slider(32, 72, 2, S.dockSize, v => { S.dockSize = v; applyScale(); }, v => setPref('dockSize', v))),
       row('Magnify icons on hover', null, toggle(S.magnify, v => setPref('magnify', v))),
-      row('Hide the Dock automatically', 'Move the pointer to the bottom edge to bring it back.',
-        segmented([['off', 'Never'], ['smart', 'When a window overlaps'], ['always', 'Always']], S.dockAutohide, v => setPref('dockAutohide', v))),
+      row('Dock style', 'Glass blurs what’s behind it. Solid is an opaque slab. Clear shows just the icons.',
+        segmented([['glass', 'Glass'], ['solid', 'Solid'], ['clear', 'Clear']], S.dockSkin || 'glass', v => setPref('dockSkin', v))),
+      row('Icon shape', null, segmented([['rounded', 'Rounded'], ['circle', 'Circle']], S.dockShape || 'rounded', v => setPref('dockShape', v))),
+      row('Hide the Dock automatically', 'Move the pointer to the Dock’s edge to bring it back.',
+        segmented([['off', 'Never'], ['smart', 'When a window overlaps'], ['desktop', 'Desktop only'], ['always', 'Always']], S.dockAutohide, v => { setPref('dockAutohide', v); updateDockVisibility(); })),
+      row('Dock position', 'Bottom, left or right edge of the screen.',
+        segmented([['bottom', 'Bottom'], ['left', 'Left'], ['right', 'Right']], S.dockPos || 'bottom', v => { setPref('dockPos', v); renderDock(true); updateDockVisibility(); })),
       row('Apps in the Dock', 'Right-click any app in App Library to keep it in the Dock.',
         button('Reset Dock', () => { S.dock = null; loadApps(); toast('Dock reset.'); }), button('Rescan apps', rescanApps))),
+    section('Calm by design'),
+    group(
+      row('Pause when an app covers the desktop', 'Animations, live wallpaper and background polling rest while a maximized or fullscreen app is in front.', toggle(S.calmMaximized !== false, v => setPref('calmMaximized', v))),
+      row('Pause everything on battery', 'The desktop goes fully calm whenever the PC unplugs, and wakes when charging resumes.', toggle(!!S.calmBattery, v => { setPref('calmBattery', v); if (typeof setBatteryCalm === 'function') setBatteryCalm(v && !!pcBattery && !pcBattery.charging); }))),
+    section('Desktop'),
     section('Desktop'),
     group(
       row('Show icons on the desktop', 'Files and shortcuts from your Desktop folder.', toggle(S.showIcons, v => setPref('showIcons', v))),
@@ -407,6 +460,13 @@ const PAGES = {
       group(h('div', { class: 'sw-pad' }, h('div', { class: 'card-grid wide' },
         Object.entries(WAVE_PALETTES).map(([id, p]) => tile(p.label, waveWallpaper(id), current === id || WALLPAPER_ALIASES[current] === id, () => setWallpaper(id)))))),
 
+      section('Framing'),
+      group(
+        row('Picture fit', 'Choose how photos fill your screen: crop to fill, fit the whole image, stretch, or keep original size.',
+          segmented([['cover', 'Fill'], ['contain', 'Fit'], ['stretch', 'Stretch'], ['center', 'Original']], S.wallpaperFit || 'cover', v => setPref('wallpaperFit', v))),
+        row('Horizontal focus', 'Shift the crop to keep your subject in view.', slider(0, 100, 1, S.wallpaperX ?? 50, v => { S.wallpaperX = v; applyWallpaper(); }, v => setPref('wallpaperX', v))),
+        row('Vertical focus', 'Move the image up or down inside the frame.', slider(0, 100, 1, S.wallpaperY ?? 50, v => { S.wallpaperY = v; applyWallpaper(); }, v => setPref('wallpaperY', v)))),
+
       section('Windows'),
       group(h('div', { class: 'sw-pad' }, h('div', { class: 'card-grid wide' },
         tile('Current Windows wallpaper', windowsWallpaperUrl ? `url("${windowsWallpaperUrl}") center / cover` : '#333', current === 'windows',
@@ -426,10 +486,52 @@ const PAGES = {
             setWallpaper({ url });
           } catch (err) { toast(err.message); }
         })))),
-    ];
+      section('Live wallpapers'),
+      group(
+        row('Current live wallpaper', S.liveWallpaper?.url ? 'A local video is playing as your desktop background.' : 'No live wallpaper selected. The still wallpaper remains the fallback.', S.liveWallpaper?.url && button('Turn off', () => { setPref('liveWallpaper', null); })),
+      row('Choose a video…', 'Select a local MP4, WebM or AVI. Video remains on this PC, loops silently, and can use more battery/GPU than a still image.', button('Browse videos…', async () => {
+          try {
+            const url = await call('pickLiveWallpaper');
+            if (url) setPref('liveWallpaper', { url, kind: 'video' });
+          } catch (err) { toast(err.message); }
+        }, true))),
+      section('Top music player'),
+      group(
+        row('Move the music pill', 'Drag the player at the top of the screen to any position. Reset returns it to the centre.', button('Reset position', () => setPref('islandPos', { x: 44, y: 3 }))),
+        row('Visibility', 'Show or hide the top music player.', toggle(S.island !== false, v => setPref('island', v)))),
+      ];
   },
 
+  controlcenter: () => [
+    section('Control Center appearance'),
+    group(
+      row('Density', 'Adjust the spacing and overall feel of Quick Controls.', segmented([['compact', 'Compact'], ['balanced', 'Balanced'], ['spacious', 'Spacious']], S.controlCenterDensity || 'balanced', v => setPref('controlCenterDensity', v))),
+      row('Panel shape', null, segmented([['soft', 'Soft'], ['sharp', 'Sharp']], S.controlCenterShape || 'soft', v => setPref('controlCenterShape', v))),
+      row('Accent glow', 'Add a subtle glow around the Control Center surface.', toggle(!!S.controlCenterGlow, v => setPref('controlCenterGlow', v))),
+      row('Panel scale', null, slider(90, 115, 1, Math.round((S.controlCenterScale || 1) * 100), v => { S.controlCenterScale = v / 100; renderControlCenter(); }, v => setPref('controlCenterScale', v / 100))),
+      row('Highlight colour', 'Set a dedicated Control Center highlight.', (() => { const c = h('input', { type: 'color', class: 'color-input', value: S.controlCenterAccent || '#3b82f6' }); c.addEventListener('input', () => { S.controlCenterAccent = c.value; save(); renderControlCenter(); }); return c; })()),
+    ),
+    note('Open Quick Controls with the menu-bar sliders icon or Win + A, then choose Customize for the same controls.'),
+  ],
+
   widgets: () => [
+    section('Desktop clock & widget design'),
+    group(
+      row('Clock face', 'Analogue remains the default. Digital and dot-matrix faces are optional.', segmented([['analog', 'Analogue'], ['digital', 'Digital'], ['dots', 'Dot matrix']], S.desktopClockFace || 'analog', v => setPref('desktopClockFace', v))),
+      row('Time format', null, segmented([[false, '12-hour'], [true, '24-hour']], !!S.desktopClock24, v => { setPref('desktopClock24', v); tickClock(); })),
+      row('Show seconds', null, toggle(!!S.desktopClockSeconds, v => { setPref('desktopClockSeconds', v); tickClock(); })),
+      row('Show date', null, toggle(S.desktopClockDate !== false, v => { setPref('desktopClockDate', v); tickClock(); })),
+      row('Alignment', null, segmented([['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], S.desktopClockAlign || 'center', v => setPref('desktopClockAlign', v))),
+      row('Digital size', null, slider(24, 90, 1, S.desktopClockSize || 48, v => { $('[data-widget="clock"]')?.style.setProperty('--clock-size', `${v}px`); }, v => setPref('desktopClockSize', v))),
+      row('Dot spacing', null, slider(0, 20, 1, Math.round((S.desktopClockTracking ?? .08) * 100), v => { $('[data-widget="clock"]')?.style.setProperty('--clock-tracking', `${v / 100}em`); }, v => setPref('desktopClockTracking', v / 100))),
+      row('Matching widget style', 'Style the desktop clock, batteries and Now Playing together.', segmented([['classic', 'Classic'], ['dot', 'Dots'], ['mono', 'Mono'], ['soft', 'Soft']], S.widgetDesign || 'classic', v => setPref('widgetDesign', v)),
+        segmented([['accent', 'Accent'], ['white', 'White'], ['text', 'Text'], ['custom', 'Custom']], S.widgetDesignColor || 'accent', v => setPref('widgetDesignColor', v)),
+        (() => { const c = h('input', { type: 'color', class: 'color-input', value: S.widgetDesignCustomColor || '#ef4444', title: 'Custom widget color', 'aria-label': 'Custom widget color' }); c.addEventListener('input', () => { S.widgetDesignCustomColor = c.value; S.widgetDesignColor = 'custom'; applyTheme(); save(); }); return c; })())),
+      h('div', { class: 'widget-style-preview', 'data-design': S.widgetDesign || 'classic' },
+        h('div', { class: 'widget-style-preview-clock' }, h('b', { text: new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date()) }), h('span', { text: 'MON · MAY 18' })),
+        h('div', { class: 'widget-style-preview-row' }, h('i', { class: 'widget-style-preview-ring' }), h('span', {}, h('b', { text: 'Headphones' }), h('small', { text: '86% · Charging' }))),
+        h('div', { class: 'widget-style-preview-media' }, h('i'), h('span', {}, h('b', { text: 'Midnight City' }), h('small', { text: 'M83' })))),
+      row('Save this as a look', 'Save the clock and widget styling with your current theme.', button('Save look…', () => promptText('Name this desktop look', 'My Widget Look', name => setPref('profiles', [...(S.profiles || []), { id: Date.now().toString(36), name, look: currentLook() }])))),
     section('Widget appearance'),
     group(h('div', { class: 'sw-pad' }, h('div', { class: 'card-grid wide' },
       [['glass', 'Glass'], ['solid', 'Solid'], ['tinted', 'Tinted']].map(([id, label]) => pickCard(label,
@@ -443,11 +545,12 @@ const PAGES = {
     section('Widgets on the desktop'),
     group(
       row('Show widgets', null, toggle(S.showWidgets, v => setPref('showWidgets', v))),
+      row('SIGNAL Audio Deck', 'A multi-view music panel with a live spectrum, waveform, radial display and transport controls.', button('Customize…', () => openAudioDeckSettings())),
       Object.entries(WIDGETS).map(([id, label]) => row(label, null,
         toggle(!S.hidden.includes(id), v => setPref('hidden', v ? S.hidden.filter(x => x !== id) : [...S.hidden, id])))),
-      row('Rearrange', 'Remove or bring back widgets right on the desktop.', button('Edit widgets', () => { closeOverlays(); toggleEditing(true); })),
-      row('Place widgets anywhere', 'Drag a widget anywhere on the desktop (press and hold it first, or use Edit Widgets). Drop it on the panel to put it back.',
-        button('Put all back in the panel', () => setPref('widgetPos', {})))),
+      row('Rearrange', 'Start arranging, moving and resizing desktop widgets.', button('Arrange widgets', () => { closeOverlays(); toggleEditing(true); })),
+      row('Place widgets anywhere', 'Press and hold a widget to move it, or use its right-click menu. Drop it back on the panel to return it.',
+        button('Put all back in the panel', () => { setPref('widgetPos', {}); setPref('widgetSize', {}); }))),
     section('World Clock'),
     group(
       (S.worldClocks || []).map(([city, tz], i) => row(city, tz.replace(/_/g, ' '),
@@ -467,13 +570,18 @@ const PAGES = {
   menubar: () => [
     section('Clock'),
     group(
+      row('Clock style', 'How the time appears in the menu bar.', segmented([['text', 'Text'], ['dots', 'Dot matrix'], ['analog', 'Analogue'], ['binary', 'Binary']], S.barClockFace || 'text', v => setPref('barClockFace', v))),
       row('Use 24-hour time', null, toggle(S.clock24, v => setPref('clock24', v))),
-      row('Show seconds', null, toggle(S.clockSeconds, v => setPref('clockSeconds', v))),
-      row('Show the date', null, toggle(S.clockDate, v => setPref('clockDate', v)))),
+      row('Show seconds', 'Shown in the text, dot-matrix and binary faces.', toggle(S.clockSeconds, v => setPref('clockSeconds', v))),
+      row('Show the date', 'Text face only.', toggle(S.clockDate, v => setPref('clockDate', v)))),
+    section('Layout'),
+    group(
+      row('Split menu bar', 'Float the menus and the status icons as separate islands, with your wallpaper showing between them.', toggle(S.barSplit, v => setPref('barSplit', v)))),
     section('Items'),
     group(
-      row('Now playing', 'A pill at the top of the screen with what’s playing. Hover it for controls.', toggle(S.island, v => setPref('island', v))),
-      row('Keyboard language', 'Click it to switch languages (Win + Space).', toggle(S.showLanguage, v => setPref('showLanguage', v))),
+      row('Now playing', 'A player at the top of the screen with what’s playing. Click it for the full panel; right-click for styles and chips.', toggle(S.island, v => { setPref('island', v); renderIsland(); })),
+      ...(S.island ? [row('Player style', 'How the player appears at the top: floating over the desktop, or pinned inside the menu bar.', segmented([['pill', 'Pill'], ['card', 'Card'], ['bar', 'In bar'], ['mini', 'Mini']], playerStyle(), v => { setPref('playerStyle', v); renderIsland(); }))] : []),
+      row('Keyboard language', 'Click it to switch languages (Win + Space).', toggle(S.showLanguage, v => { setPref('showLanguage', v); renderLanguage(); })),
       row('System tray icons', 'Discord, Steam, OneDrive and other tray icons, on the right. Click or right-click them as usual.', toggle(S.trayIcons, v => setTrayIcons(v))),
       row('The app’s own menus', 'Show the menus of the app in front (File, Edit, View…) when it has standard ones.', toggle(S.appMenus, v => { setPref('appMenus', v); appMenuFor = -1; refreshAppMenus(); }))),
   ],
@@ -582,6 +690,56 @@ const PAGES = {
     ];
   },
 
+  profiles: () => {
+    const PROFILE_KEYS = ['theme','accent','customSurface','glass','glassStyle','glassTint','refraction','wallpaper','wallpaperFit','wallpaperX','wallpaperY','dynamicWallpaper','deepDotUi','lockClockStyle',
+      'dock','dockSize','dockPos','magnify','dockAutohide','iconStyle','iconSize','uiScale','widgetStyle','widgetTint','showWidgets','hidden',
+      'widgetScale','widgetSize','widgetPos','widgetOrder','widgetOpacity','widgetLock','widgetOpts','hideParts','iconOverrides','labels','customCss','showIcons','useStacks','island','lockLayout',
+      'desktopClockFace','desktopClock24','desktopClockSeconds','desktopClockDate','desktopClockAlign','desktopClockSize','desktopClockColor','desktopClockTracking','widgetDesign','widgetDesignColor','widgetDesignCustomColor','widgetSize','islandPos',
+      'liveWallpaper','customWidgets',
+      'clock24','clockSeconds','clockDate','showLanguage','trayIcons','barSplit','barClockFace'];
+    const title = h('input', { class: 'field', style: 'width:220px', placeholder: 'Name this desktop look', maxlength: '40' });
+    const currentLook = () => Object.fromEntries(PROFILE_KEYS.filter(k => S[k] !== undefined).map(k => [k, S[k]]));
+    const apply = profile => {
+      for (const key of PROFILE_KEYS) if (Object.prototype.hasOwnProperty.call(profile.settings || {}, key)) S[key] = profile.settings[key];
+      save(); applyTheme(); applyDeep?.(); applyWallpaper(); applyScale(); applyCustomization(); renderDock(true);
+      applyWidgetVisibility(); refreshSettingsPage(); toast(`“${profile.name}” applied.`);
+    };
+    const download = profile => {
+      const blob = new Blob([JSON.stringify({ format: 'haven-look', version: 1, name: profile.name, settings: profile.settings }, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob), a = h('a', { href: url, download: `${profile.name.replace(/[^\w-]+/g, '-').toLowerCase() || 'haven-look'}.havenlook.json` });
+      a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    const importFile = h('input', { type: 'file', accept: '.json,application/json', hidden: true });
+    importFile.addEventListener('change', async () => {
+      const file = importFile.files?.[0]; if (!file) return;
+      try {
+        if (file.size > 256000) throw new Error('Look file is too large.');
+        const data = JSON.parse(await file.text());
+        if (data.format !== 'haven-look' || !data.settings || typeof data.settings !== 'object') throw new Error('That is not a Haven look file.');
+        const safe = Object.fromEntries(PROFILE_KEYS.filter(k => Object.prototype.hasOwnProperty.call(data.settings, k)).map(k => [k, data.settings[k]]));
+        const profile = { id: crypto.randomUUID(), name: String(data.name || 'Imported look').slice(0, 40), settings: safe };
+        S.profiles = [...(S.profiles || []), profile]; save(); refreshSettingsPage(); toast('Look imported.');
+      } catch (err) { toast(err.message || 'Could not import that look.'); }
+      importFile.value = '';
+    });
+    const profiles = (S.profiles || []).map(p => row(p.name, 'A saved Haven desktop look.',
+      button('Apply', () => apply(p), true), button('Export', () => download(p)), button('Delete', () => {
+        S.profiles = S.profiles.filter(x => x.id !== p.id); save(); refreshSettingsPage();
+      })));
+    return [
+      section('Your desktop looks'),
+      group(row('Name', 'Capture the appearance and layout you have now. Your reminders, profile and system settings are never included.', title,
+        button('Save current look', () => {
+          const name = title.value.trim(); if (!name) { title.focus(); toast('Give this look a name first.'); return; }
+          S.profiles = [...(S.profiles || []), { id: crypto.randomUUID(), name: name.slice(0, 40), settings: currentLook() }];
+          title.value = ''; save(); refreshSettingsPage(); toast('Desktop look saved.');
+        }, true))),
+      group(button('Import a look…', () => importFile.click()), importFile),
+      ...(profiles.length ? profiles : [group(note('No saved looks yet. Save your current desktop to get started.'))]),
+      note('Looks are stored on this PC. Export a .havenlook.json file to share or back one up; imported looks only change visual and layout preferences.'),
+    ];
+  },
+
   lock: () => {
     const current = h('input', { type: 'password', class: 'field', style: 'width:200px', placeholder: 'Current password' });
     const next = h('input', { type: 'password', class: 'field', style: 'width:200px', placeholder: 'New password' });
@@ -630,7 +788,7 @@ const PAGES = {
   trackpad: () => [
     section('Gestures'),
     group(
-      row('Swipe between apps', 'Swipe left or right to move through your open apps. Swipe up for Overview, down for App Windows. With the other number of fingers, swipe left or right to change spaces. Tap with three fingers to search, four for Notifications.',
+      row('Swipe between apps', 'Swipe left or right to move through your open apps. Swipe up for Overview, down for App Windows. With the other number of fingers, swipe left or right to change spaces. Three-finger taps do nothing; four-finger taps open Notifications.',
         toggle(S.gestures, v => { setPref('gestures', v); applyInputSettings(); })),
       row('Fingers', null, segmented([[3, 'Three'], [4, 'Four']], S.gestureFingers, v => { setPref('gestureFingers', v); applyInputSettings(); }))),
     note(touchpadDetected ? 'Your precision touchpad is working with Haven.' : 'Haven detects your touchpad the first time you use it.'),

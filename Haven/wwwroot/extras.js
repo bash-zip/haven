@@ -156,8 +156,7 @@ function addSettingsPage(entry, beforeId) {
   SETTINGS_NAV.splice(at < 0 ? SETTINGS_NAV.length : at, 0, entry);
 }
 
-addSettingsPage({ id: 'claude', label: 'Claude', icon: 'spark', color: '#d97757', keys: 'ask claude ai assistant api key anthropic question answer' }, 'language');
-addSettingsPage({ id: 'clipboard', label: 'Clipboard', icon: 'clipboard', color: '#5b8def', keys: 'clipboard history copy paste snippets win v pinned' }, 'claude');
+addSettingsPage({ id: 'clipboard', label: 'Clipboard', icon: 'clipboard', color: '#5b8def', keys: 'clipboard history copy paste snippets win v pinned' }, 'language');
 Object.assign(NAV_ICONS, { spark: EXTRA_ICONS.spark, clipboard: EXTRA_ICONS.clipboard, check: EXTRA_ICONS.check });
 
 PAGES.claude = () => {

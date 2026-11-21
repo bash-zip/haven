@@ -166,12 +166,16 @@ public sealed record WallpaperItem(string Name, string Url, string Thumb);
     /// <summary>Approximate location from Windows location services, rounded to roughly 1 km.</summary>
     public static async Task<object?> LocationAsync()
     {
-        var access = await Geolocator.RequestAccessAsync();
-        if (access != GeolocationAccessStatus.Allowed) return null;
-        var locator = new Geolocator { DesiredAccuracy = PositionAccuracy.Default };
-        var pos = await locator.GetGeopositionAsync(TimeSpan.FromMinutes(30), TimeSpan.FromSeconds(10));
-        var p = pos.Coordinate.Point.Position;
-        return new { lat = Math.Round(p.Latitude, 2), lon = Math.Round(p.Longitude, 2) };
+        try
+        {
+            var access = await Geolocator.RequestAccessAsync();
+            if (access != GeolocationAccessStatus.Allowed) return null;
+            var locator = new Geolocator { DesiredAccuracy = PositionAccuracy.Default };
+            var pos = await locator.GetGeopositionAsync(TimeSpan.FromMinutes(30), TimeSpan.FromSeconds(10));
+            var p = pos.Coordinate.Point.Position;
+            return new { lat = Math.Round(p.Latitude, 2), lon = Math.Round(p.Longitude, 2) };
+        }
+        catch { return null; } // location turned off in Windows: weather falls back to the chosen city
     }
 
     const int NameDisplay = 3;

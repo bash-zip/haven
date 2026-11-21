@@ -3,12 +3,12 @@ using System.Runtime.InteropServices;
 namespace Haven;
 
 /// <summary>
-/// Reserves a strip along a screen edge, the way the taskbar does, so maximized windows
+/// Reserves a strip along a screen edge (like the taskbar does) so maximized windows
 /// stop at Haven's menu bar and Dock instead of sliding underneath them.
 /// </summary>
 sealed class AppBar : IDisposable
 {
-    public const uint Left = 0, Top = 1, Bottom = 3;
+    public const uint Left = 0, Top = 1, Right = 2, Bottom = 3;
 
     const uint ABM_NEW = 0, ABM_REMOVE = 1, ABM_QUERYPOS = 2, ABM_SETPOS = 3;
     const int ABN_POSCHANGED = 1;
@@ -33,7 +33,7 @@ sealed class AppBar : IDisposable
 
     readonly Func<Native.RECT> _monitor;
 
-    /// <param name="monitor">Which display to reserve space on (the primary one unless given).</param>
+    /// <param name="monitor">Which display I'm reserving space on (primary if not given).</param>
     public AppBar(uint edge, Func<Native.RECT>? monitor = null)
     {
         _edge = edge;
@@ -51,8 +51,8 @@ sealed class AppBar : IDisposable
     public bool Registered => _registered;
 
     /// <summary>
-    /// Registers with Explorer. At sign-in Explorer may not be ready yet, and when Explorer restarts
-    /// it forgets every app bar, so this is retried and repeated as needed.
+    /// Registers with Explorer. At sign-in Explorer might not be ready yet, and when it restarts
+    /// it forgets every app bar, so I retry/reapply as needed.
     /// </summary>
     public void Register()
     {
@@ -83,9 +83,10 @@ sealed class AppBar : IDisposable
 
     void Clamp(ref Native.RECT rc, Native.RECT monitor)
     {
-        if (_edge == Left)
+        if (_edge is Left or Right)
         {
-            rc.Right = rc.Left + _thickness;
+            if (_edge == Left) rc.Right = rc.Left + _thickness;
+            else rc.Left = rc.Right - _thickness;
             rc.Top = monitor.Top;
             rc.Bottom = monitor.Bottom;
             return;

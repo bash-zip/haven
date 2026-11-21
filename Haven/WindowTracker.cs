@@ -5,7 +5,7 @@ namespace Haven;
 
 public sealed record WindowInfo(long Hwnd, string Title, string Exe, string ExePath, string? Icon, bool Minimized, string? Aumid);
 
-/// <summary>Finds the top-level windows a person would see in Alt+Tab, and brings one to the front.</summary>
+/// <summary>I find the top-level windows you'd see in Alt+Tab, and I bring one to the front.</summary>
 public sealed class WindowTracker
 {
     static readonly HashSet<string> ShellClasses = new(StringComparer.Ordinal)
@@ -109,12 +109,12 @@ public sealed class WindowTracker
         if (back.Count > 0)
         {
             // Bottom-most first, so the window that was in front ends up in front again.
-            foreach (var h in back) ShowWindow(h, 4 /* SW_SHOWNOACTIVATE */);
+            foreach (var h in back) { WindowAnimator.Skip(h); ShowWindow(h, 4 /* SW_SHOWNOACTIVATE */); }
             Focus(back[^1].ToInt64());
             return;
         }
         var shown = VisibleWindowsBottomUp();
-        foreach (var h in shown) ShowWindow(h, 7 /* SW_SHOWMINNOACTIVE */);
+        foreach (var h in shown) { WindowAnimator.Skip(h); ShowWindow(h, 7 /* SW_SHOWMINNOACTIVE */); }
         _desktopShown = shown;
     }
 
@@ -136,11 +136,64 @@ public sealed class WindowTracker
         var h = new IntPtr(hwnd);
         if (!IsWindow(h)) return;
         if (IsIconic(h)) ShowWindow(h, SW_RESTORE);
+        if (GetForegroundWindow() == h) return;
         if (SetForegroundWindow(h)) return;
         // Windows only lets the process that received the last input change the foreground window.
         // A tap of Alt counts as input, which makes the switch allowed.
         Native.PressKeys(0x12);
+        if (SetForegroundWindow(h)) return;
+        // Still refused (elevated apps, stubborn ghosts): borrow the foreground thread's input
+        // state while bringing the window up, then let SwitchToThisWindow finish the job.
+        GetWindowThreadProcessId(Native.GetForegroundWindow(), out var fgThread);
+        var me = GetCurrentThreadId();
+        var attached = fgThread != 0 && fgThread != me && AttachThreadInput(me, fgThread, true);
+        BringWindowToTop(h);
         SetForegroundWindow(h);
+        if (attached) AttachThreadInput(me, fgThread, false);
+        if (GetForegroundWindow() != h) SwitchToThisWindow(h, true);
+    }
+
+    const int SW_MINIMIZE = 6;
+
+    /// <summary>
+    /// Dock clicks go here: focus the app behind a window, picking its best one — topmost,
+    /// visible, not a ghost. A ghost foreground window (an app's hidden one while another app
+    /// shows on screen) is never focused or minimized, which made the Dock feel dead.
+    /// </summary>
+    public static void ActivateApp(long hwnd)
+    {
+        var h = new IntPtr(hwnd);
+        if (!IsWindow(h)) return;
+        var exe = ExeOf(h);
+        IntPtr best = IntPtr.Zero;
+        var list = VisibleWindowsBottomUp();
+        for (var i = list.Count - 1; i >= 0; i--) // topmost first
+        {
+            var w = list[i];
+            if (w == h) continue;
+            if (!string.Equals(ExeOf(w), exe, StringComparison.OrdinalIgnoreCase)) continue;
+            if (IsIconic(w) && list.Count > 1) continue;
+            best = w;
+            break;
+        }
+        if (best == IntPtr.Zero) best = h;
+        if (GetForegroundWindow() == best && !IsIconic(best))
+        {
+            ShowWindow(best, SW_MINIMIZE); // genuinely already in front: the click means "put it away"
+            return;
+        }
+        Focus(best);
+    }
+
+    /// <summary>A real app window (as Alt+Tab would list it), whether minimized or not.</summary>
+    public static bool IsAppWindow(IntPtr h)
+    {
+        if (!IsWindow(h)) return false;
+        if (!IsIconic(h)) return IsAltTabWindow(h);
+        // Minimized windows fail the visibility checks below only because they're minimized.
+        if (GetWindow(h, GW_OWNER) != IntPtr.Zero || GetWindowTextLength(h) == 0) return false;
+        long ex = GetWindowLongPtr(h, GWL_EXSTYLE).ToInt64();
+        return (ex & WS_EX_TOOLWINDOW) == 0;
     }
 
     static bool IsAltTabWindow(IntPtr h)
@@ -201,6 +254,11 @@ public sealed class WindowTracker
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out int value, int size);
     [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool attach);
+    [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr h, bool altTab);
+    [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, EntryPoint = "QueryFullProcessImageNameW")]
     static extern bool QueryFullProcessImageName(IntPtr h, int flags, StringBuilder exe, ref int size);
 }

@@ -10,6 +10,11 @@ release/
 .zcode/
 *.key
 .debug
+
+# Large installers/binaries (use GitHub Releases / external hosting)
+**/HavenSetup*.exe
+site/download/*.exe
+website/downloads/*.exe
 Setup/payload.zip
 Setup/bin/
 Setup/obj/

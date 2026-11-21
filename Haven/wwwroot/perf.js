@@ -7,19 +7,39 @@
    ========================================================================= */
 
 let pageCovered = false;
+let coveredRaw = false;   // what the host reports (a maximized or fullscreen app in front)
+let batteryCalm = false;  // "pause everything on battery" is active
 const QUIET_WHEN_COVERED = new Set(['stats', 'recentFiles', 'currentSpace', 'stocks', 'events', 'batteries']);
 
-function setCovered(on) {
-  on = !!on;
+/** "Calm by design": pause the desktop when covered (unless the user lets maximized apps
+    stay live) and optionally whenever the PC runs on battery. */
+function updateCalm() {
+  const on = coveredRaw || batteryCalm;
   if (on === pageCovered) return;
   pageCovered = on;
   document.documentElement.classList.toggle('covered', on);
   // Audio capture only runs while someone is actually watching a visualizer.
   if (typeof vizViews !== 'undefined' && vizViews.size && host) call('audioViz', { on: !on }).catch(() => {});
+  // Live wallpaper rests with everything else.
+  for (const v of document.querySelectorAll('video.live-wallpaper')) on ? v.pause() : v.play().catch(() => {});
   if (!on) {
     if (typeof vizRaf !== 'undefined' && !vizRaf && vizViews.size) vizRaf = requestAnimationFrame(vizLoop);
     if (typeof syncTty === 'function') syncTty();
   }
+}
+
+function setCovered(data) {
+  coveredRaw = typeof data === 'object' && data ? !!data.covered : !!data;
+  const full = typeof data === 'object' && data ? !!data.full : false;
+  // "Desktop only" calm: a merely maximized app doesn't pause the desktop if the user said so.
+  updateCalm();
+  window.__coveredFull = full;
+}
+
+/** Battery calm is evaluated by the batteries poll. */
+function setBatteryCalm(on) {
+  batteryCalm = !!on && S.calmBattery === true;
+  updateCalm();
 }
 
 {

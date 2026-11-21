@@ -8,7 +8,7 @@ namespace Haven;
 /// Installing and uninstalling, with no separate setup program: run Haven.exe from the download
 /// and it offers to install itself for your account (%LOCALAPPDATA%\Programs\Haven, a Start menu
 /// entry, and an entry in Settings → Apps to uninstall it). Uninstalling puts the taskbar and every
-/// Windows setting Haven changed back, and can keep your settings for a later reinstall.
+/// Windows setting Haven changed back, and I can keep your settings for a later reinstall.
 /// </summary>
 static class Installer
 {
@@ -55,7 +55,23 @@ static class Installer
             CreateShortcut(Shortcut, InstalledExe, dst);
             Register(dst);
             Log.Info($"Installed to {dst}");
-            if (start) Process.Start(new ProcessStartInfo(InstalledExe) { UseShellExecute = true, WorkingDirectory = dst });
+
+            // If Haven already starts at sign-in (maybe from another copy), point that at this install.
+            bool autostart = false;
+            try { autostart = ShellHost.Autostart; } catch { }
+            if (autostart)
+                using (var p = Process.Start(new ProcessStartInfo(InstalledExe, "--autostart on") { UseShellExecute = false, WorkingDirectory = dst }))
+                    p?.WaitForExit(15000);
+
+            if (start)
+            {
+                // Only one Haven runs at a time: close any other copy so the installed one can take over
+                // (each copy's watchdog puts the taskbar back while it closes).
+                foreach (var p in Process.GetProcessesByName("Haven").Where(p => p.Id != Environment.ProcessId))
+                    try { p.Kill(); p.WaitForExit(5000); } catch { }
+                Thread.Sleep(1500);
+                Process.Start(new ProcessStartInfo(InstalledExe) { UseShellExecute = true, WorkingDirectory = dst });
+            }
             return true;
         }
         catch (Exception e)

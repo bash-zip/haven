@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>haven — a calmer desktop for windows</title>
+<meta name="description" content="haven adds a quiet menu bar, a dock, widgets and a hundred small kindnesses to the windows you already have. free, no admin rights, uninstall any time.">
+<meta name="theme-color" content="#0b0b0d">
+<link rel="icon" href="assets/rose.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="haven">
+<meta property="og:title" content="haven — a calmer desktop for windows">
+<meta property="og:description" content="a quiet menu bar. a dock that feels like home. widgets only where you want them. free, no admin rights, uninstall any time.">
+<meta property="og:image" content="assets/screenshot-blue-final.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="haven — a calmer desktop for windows">
+<meta name="twitter:description" content="a quiet menu bar. a dock that feels like home. widgets only where you want them.">
+<meta name="twitter:image" content="assets/screenshot-blue-final.jpg">
+<link rel="preload" href="assets/fonts/sora-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/sora-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" type="text/css" href="styles.css">
+</head>
+<body>
+<canvas class="page-smoke" aria-hidden="true"></canvas>
+
+<nav class="nav">
+  <a class="brand" href="#top"><img src="assets/rose-small.png" alt="">haven</a>
+  <div class="nav-links">
+    <a href="#desktop">desktop</a><a href="#widgets">widgets</a><a href="#themes">themes</a>
+  </div>
+  <a class="nav-download" href="https://github.com/bash-zip/haven/releases/download/Haven/HavenSetup.exe">download <span>↗</span></a>
+</nav>
+
+<!-- ============ hero ============ -->
+<header class="hero" id="top">
+  <div class="hero-inner">
+    <h1>a calmer desktop<br><em>for the windows you have.</em></h1>
+    <p class="hero-sub">a quiet menu bar. a dock that feels like home. widgets only where you
+    want them. your apps, files and games stay exactly as they are — everything around
+    them softens.</p>
+    <div class="hero-cta">
+      <a class="button" href="https://github.com/bash-zip/haven/releases/download/Haven/HavenSetup.exe">download haven <span>↓</span></a>
+    </div>
+  </div>
+
+  <!-- real screenshots. light by default, one click wears the dark one. -->
+  <figure class="shot-stage">
+    <div class="shot-frame" id="shot-frame">
+      <img class="shot is-on" src="assets/screenshot-blue-final.jpg" alt="haven on windows: a blue theme with clock, calendar, weather and stocks widgets" width="1920" height="1200">
+      <img class="shot" src="assets/screenshot-mono-final.jpg" alt="haven on windows: a dark theme with a monochrome city wallpaper" loading="lazy" width="1920" height="1200">
+      <img class="shot" src="assets/screenshot-blush-web.jpg" alt="haven on windows: a soft blush rosewood theme" loading="lazy" width="1920" height="1200">
+      <button class="hotspot" style="--x:9%; --y:33%" aria-label="widgets: drag anywhere, resize for real"><i></i><span>widgets, placed anywhere</span></button>
+      <button class="hotspot" style="--x:50%; --y:11%" aria-label="now playing: anything windows hears"><i></i><span>now playing — whatever windows hears</span></button>
+      <button class="hotspot" style="--x:84%; --y:27%" aria-label="full media panel one click away"><i></i><span>one click: the full panel</span></button>
+      <button class="hotspot" data-tip-pos="up" style="--x:50%; --y:92%" aria-label="the dock: magnifies on hover, tucks away when you work"><i></i><span>the dock — magnifies, then gets out of the way</span></button>
+    </div>
+    <figcaption class="shot-bar">
+      <span class="shot-tag">haven 1.0 · on windows 11</span>
+      <span class="shot-toggle">
+        <button class="tgl is-on" data-i="0">blue</button><button class="tgl" data-i="1">dark</button><button class="tgl" data-i="2">blush</button>
+      </span>
+    </figcaption>
+  </figure>
+
+  <div class="marquee" aria-hidden="true">
+    <div class="marquee-track">
+      <span>21 widgets</span><span>26 themes</span><span>0 subscriptions</span><span>no telemetry</span>
+      <span>watchdog-protected</span><span>no admin rights</span><span>uninstall in one click</span><span>free forever</span>
+      <span>21 widgets</span><span>26 themes</span><span>0 subscriptions</span><span>no telemetry</span>
+      <span>watchdog-protected</span><span>no admin rights</span><span>uninstall in one click</span><span>free forever</span>
+    </div>
+  </div>
+</header>
+
+<main>
+<!-- ============ the desktop ============ -->
+<section class="block" id="desktop">
+  <div class="block-head"><span class="idx">01</span><h2>your apps stay.<br><em>everything else softens.</em></h2></div>
+  <div class="three">
+    <article><h3>a dock, with manners</h3><p>magnifies under your cursor, shows what's already running,
+    tucks away when a window needs the room. bottom, left or right — your call.</p></article>
+    <article><h3>a menu bar that behaves</h3><p>the front app's real menus, status icons, a proper clock.
+    split it into floating islands if that's more your speed.</p></article>
+    <article><h3>alt+tab, again</h3><p>an instant strip with real icons, no flicker — and when you let go
+    of alt, your keyboard still works. we test the small things.</p></article>
+    </div>
+    <div class="shortcut-strip">
+      <span class="k">ctrl + ↑</span><span class="d">overview</span>
+      <span class="k">win</span><span class="d">app library</span>
+      <span class="k">ctrl + alt + ←→</span><span class="d">tile windows</span>
+      <span class="k">ctrl + l</span><span class="d">lock</span>
+      <span class="k">alt + space</span><span class="d">search everything</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ widgets ============ -->
+<section class="block" id="widgets">
+  <div class="block-head"><span class="idx">02</span><h2>twenty-one widgets.<br><em>three by default.</em></h2></div>
+  <p class="block-sub">the rest wait in the gallery until you want them. move them anywhere,
+  resize for real, tint, lock, ignore — it's your desk.</p>
+
+  <div class="widget-words">
+    <p><b>time.</b> clock, calendar, world clock, timer, countdown.</p>
+    <p><b>now.</b> weather, media, audio deck, cava, visualizer.</p>
+    <p><b>life.</b> notes, reminders, photos, events, stocks.</p>
+    <p><b>system.</b> batteries, cpu graph, battery history, network.</p>
+    <p class="dim">…or build your own — text, web, colour.</p>
+  </div>
+</section>
+
+<!-- ============ player ============ -->
+<section class="block" id="player">
+  <div class="block-head"><span class="idx">03</span><h2>whatever's playing,<br><em>floats to the top.</em></h2></div>
+  <p class="block-sub">spotify, youtube, anything windows hears — one small pill, click for the full panel.
+  right-click to change its shape.</p>
+  <div class="player-shot">
+    <img src="assets/media-panel.png" alt="haven's media panel with track, controls and progress" width="382" height="196" loading="lazy">
+    <div class="player-note">
+      <div class="player-keys">
+        <span class="k">pill</span><span class="k">bar</span><span class="k">card</span><span class="k">mini</span>
+      </div>
+      <p>four shapes. zero pop-ups. the panel only appears when you ask.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ themes ============ -->
+<section class="block" id="themes">
+  <div class="block-head"><span class="idx">04</span><h2>dressed how you like.<br><em>or not dressed at all.</em></h2></div>
+  <p class="block-sub">twenty-six themes out of the box, and a style studio for everything else:
+  fonts, corners, glass, motion, accents — even a theme code you can send to a friend.</p>
+  <figure class="shot-stage small">
+    <div class="shot-frame" id="theme-frame">
+      <img class="shot is-on" src="assets/screenshot-blue-final.jpg" alt="haven in a blue theme" width="1920" height="1200" loading="lazy">
+      <img class="shot" src="assets/screenshot-mono-final.jpg" alt="haven in a dark monochrome theme" loading="lazy" width="1920" height="1200">
+      <img class="shot" src="assets/screenshot-blush-web.jpg" alt="haven in a soft blush theme" loading="lazy" width="1920" height="1200">
+    </div>
+    <figcaption class="shot-bar">
+      <span class="shot-tag">haven 1.0 · real setups</span>
+      <span class="shot-toggle">
+        <button class="tgl is-on" data-i="0">blue</button><button class="tgl" data-i="1">mono</button><button class="tgl" data-i="2">blush</button>
+      </span>
+    </figcaption>
+  </figure>
+  <p class="after-note">light: sunrise over still water. dark: 2 am, the city off. these are real setups, not renders.</p>
+</section>
+
+<!-- ============ calm ============ -->
+<section class="block" id="calm">
+  <div class="block-head"><span class="idx">05</span><h2>it rests when you work.</h2></div>
+  <p class="block-sub">when an app covers the desktop, the desktop sleeps — live wallpapers pause,
+  widgets stop drawing, your gpu gets its afternoon back.</p>
+  <div class="promise-list">
+    <p><b>light on the machine.</b> measured, not promised: <b>as little as ~30 MB</b> of memory and <b>0.1% CPU</b> while idling on a live
+    Windows 11 machine — task manager screenshot, not a marketing number. a thin layer over native windows; quiet when idle, invisible during games.</p>
+    <p><b>private by default.</b> everything runs on your pc. no account, no telemetry, no cloud. weather is one small, city-only request.</p>
+    <p><b>leaves nicely.</b> every change is tracked and reversed — on exit, on uninstall, even on a crash, thanks to a watchdog whose only job is putting your taskbar back.</p>
+  </div>
+</section>
+
+<!-- ============ setup walkthrough ============ -->
+<section class="block" id="setup">
+  <div class="block-head"><span class="idx">06</span><h2>moving in takes<br><em>about a minute.</em></h2></div>
+  <p class="block-sub">this is the actual setup — no dark patterns, no bundles, no account. pick a folder,
+  tick two boxes, watch it bloom.</p>
+  <div class="wizard-strip">
+    <figure class="wizard-step">
+      <img src="assets/wizard-welcome.png" alt="haven setup welcome page with the rose" loading="lazy">
+      <figcaption><b>welcome</b><span>the whole pitch, one screen</span></figcaption>
+    </figure>
+    <figure class="wizard-step">
+      <img src="assets/wizard-location.png" alt="setup asking where haven should live" loading="lazy">
+      <figcaption><b>pick a folder</b><span>installs for your account only — no admin prompt</span></figcaption>
+    </figure>
+    <figure class="wizard-step">
+      <img src="assets/wizard-options.png" alt="setup options: start at sign in, desktop shortcut, launch" loading="lazy">
+      <figcaption><b>two checkboxes</b><span>all of it changeable later in settings</span></figcaption>
+    </figure>
+    <figure class="wizard-step">
+      <img src="assets/wizard-finish.png" alt="setup finished page" loading="lazy">
+      <figcaption><b>done</b><span>uninstall any time from settings → apps</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ download ============ -->
+<section class="block dl" id="download">
+  <h2 class="dl-h">one file.<br><em>one minute.</em></h2>
+  <a class="button" href="https://github.com/bash-zip/haven/releases/download/Haven/HavenSetup.exe">download haven <span>↓</span></a>
+  <p class="dl-meta">windows 10 / 11 · 64-bit · ~140 mb · no admin prompt<br>
+  <span class="dl-warn">not code-signed yet — windows may ask for confirmation on first run.</span></p>
+  <details class="hash"><summary>verify sha-256</summary><code>4E70B9C211DDDB90B83EFBF46784CE426BE1B447F639ECA5B6E49329EA9749D0</code></details>
+</section>
+
+</main>
+
+<footer class="footer">
+  <img src="assets/rose.png" alt="">
+  <p class="foot-line">money doesn’t buy happiness,<br>because happiness is <b>free</b>.</p>
+  <small>independent project · not affiliated with apple or microsoft<br>windows is a trademark of microsoft corporation. macos is a trademark of apple inc.</small>
+</footer>
+<script src="app.js"></script>
+<script src="smoke.js"></script>
+</body>
+</html>

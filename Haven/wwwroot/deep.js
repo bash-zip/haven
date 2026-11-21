@@ -10,11 +10,13 @@
    ========================================================================= */
 
 const DEEP_DEFAULTS = {
-  deepCorners: 'round', deepCornerSize: 14, deepControls: 'macos', deepControlsSide: 'left',
+  deepCorners: 'round', deepCornerSize: 14, deepControls: 'macos', deepControlsSide: 'left', deepDotUi: false, lockClockStyle: 'classic',
   deepBorder: 'hairline', deepBorderWidth: 1, deepSpin: false, deepShadow: 'soft', deepAppWindows: false,
-  deepMotion: 'scale', deepTitles: 'normal', deepFont: 'system',
+  deepMotion: 'scale', deepTitles: 'normal', deepFont: 'system', deepFontCustom: '',
   fxGrain: false, fxScanlines: false, fxHud: false, fxLed: false,
-  wallTransition: 'circle', explorerIcon: 'default', lockLayout: null,
+  wallTransition: 'circle', explorerIcon: 'default', lockLayout: null, lockBlur: 0, lockDim: 0,
+  bootSplash: true, cursorStyle: 'system', hudTelemetry: false, hudPointer: false,
+  deepWindowOpacity: 100, deepWindowBlur: 0, deepMotionSpeed: 100, deepMotionCurve: 'smooth',
 };
 for (const [k, v] of Object.entries(DEEP_DEFAULTS)) if (!(k in DEFAULTS)) DEFAULTS[k] = v;
 for (const k of Object.keys(DEEP_DEFAULTS)) if (k !== 'lockLayout' && !LOOK_KEYS.includes(k)) LOOK_KEYS.push(k);
@@ -57,6 +59,12 @@ const DEEP_THEMES = [
   { id: 'sage', name: 'Lime', tag: 'Fresh', look: { theme: 'dark', accent: '#9ccc4a', wallpaper: 'sage', deepCorners: 'squircle', deepCornerSize: 16, deepControls: 'macos', deepBorder: 'hairline', deepShadow: 'soft', deepMotion: 'popin', deepFont: 'rounded', fxScanlines: false, fxGrain: false, fxHud: false } },
   { id: 'abyss', name: 'Deep Sea', tag: 'Code', look: { theme: 'black', accent: '#2f6bff', wallpaper: 'abyss', deepCorners: 'notch', deepCornerSize: 8, deepControls: 'signal', deepBorder: 'glow', deepShadow: 'none', deepMotion: 'dots', deepFont: 'mono', deepTitles: 'caps', fxScanlines: true, fxHud: true, fxGrain: false } },
   { id: 'tty', name: 'Terminal', tag: 'Green screen', look: { theme: 'black', accent: '#22c55e', wallpaper: 'tty', deepCorners: 'sharp', deepCornerSize: 0, deepControls: 'mono', deepBorder: 'hairline', deepShadow: 'none', deepMotion: 'signal', deepFont: 'mono', deepTitles: 'caps', fxScanlines: true, fxGrain: true, fxHud: false } },
+  { id: 'dot-matrix', name: 'Dot Matrix', tag: 'Nothing-inspired', look: { theme: 'black', accent: '#e5483a', wallpaper: 'signal', deepCorners: 'sharp', deepCornerSize: 2, deepControls: 'signal', deepBorder: 'hairline', deepShadow: 'none', deepMotion: 'dots', deepFont: 'mono', deepTitles: 'caps', deepDotUi: true, lockClockStyle: 'dots', desktopClockFace: 'dots', widgetDesign: 'dot', widgetDesignColor: 'white', fxGrain: false, fxScanlines: false, fxHud: false } },
+  { id: 'red-dot', name: 'Red Dot', tag: 'Signal teaser', look: { theme: 'black', accent: '#e5483a', wallpaper: 'matrix', glass: false, glassStyle: 'frosted', iconStyle: 'dark', widgetStyle: 'solid', deepCorners: 'sharp', deepCornerSize: 0, deepControls: 'signal', deepBorder: 'hairline', deepShadow: 'none', deepMotion: 'dots', deepFont: 'mono', deepTitles: 'caps', deepDotUi: true, lockClockStyle: 'dots', desktopClockFace: 'dots', widgetDesign: 'dot', widgetDesignColor: 'white', fxGrain: false, fxScanlines: false, fxHud: false } },
+  { id: 'grey', name: 'Familiar Grey', tag: 'Quiet', look: { theme: 'grey', accent: '#d6d6d8', wallpaper: 'midnight', deepCorners: 'round', deepCornerSize: 14, deepControls: 'macos', deepMotion: 'genie', deepFont: 'system', fxGrain: false, fxScanlines: false, fxHud: false } },
+  { id: 'burgundy', name: 'Burgundy', tag: 'Warm minimal', look: { theme: 'burgundy', accent: '#e98976', wallpaper: 'ember', deepCorners: 'squircle', deepCornerSize: 16, deepControls: 'macos', deepMotion: 'fade', deepFont: 'rounded', fxGrain: true, fxScanlines: false, fxHud: false } },
+  { id: 'true-black', name: 'True Black', tag: 'OLED', look: { theme: 'black', accent: '#f2f2f2', wallpaper: 'abyss', deepCorners: 'sharp', deepCornerSize: 0, deepControls: 'mono', deepBorder: 'none', deepShadow: 'none', deepMotion: 'dots', deepFont: 'mono', fxGrain: false, fxScanlines: false, fxHud: false } },
+  { id: 'familiar-light', name: 'Familiar Light', tag: 'Daylight', look: { theme: 'light', accent: '#56565c', wallpaper: 'paper', deepCorners: 'round', deepCornerSize: 12, deepControls: 'windows', deepControlsSide: 'right', deepMotion: 'scale', deepFont: 'system', fxGrain: false, fxScanlines: false, fxHud: false } },
 ];
 
 /* ---------- Applying it ---------- */
@@ -65,6 +73,13 @@ const CORNER_SHAPES = { round: 'round', windows: 'round', squircle: 'squircle', 
 
 function applyDeep() {
   const root = document.documentElement;
+  root.dataset.cursor = ['dot', 'signal'].includes(S.cursorStyle) ? S.cursorStyle : 'system';
+  root.style.setProperty('--window-opacity', Math.max(55, Math.min(100, Number(S.deepWindowOpacity) || 100)) / 100);
+  // Only override the glass blur when the user picked one; 0 means "keep Haven's default frost".
+  if (Number(S.deepWindowBlur) > 0) root.style.setProperty('--window-blur', `${Math.min(30, Number(S.deepWindowBlur))}px`);
+  else root.style.removeProperty('--window-blur');
+  root.style.setProperty('--motion-speed', Math.max(50, Math.min(160, Number(S.deepMotionSpeed) || 100)) / 100);
+  root.dataset.motionCurve = ['smooth', 'snappy', 'linear'].includes(S.deepMotionCurve) ? S.deepMotionCurve : 'smooth';
   const size = S.deepCorners === 'sharp' ? 0 : S.deepCorners === 'windows' ? 8 : Number(S.deepCornerSize ?? 14);
   root.style.setProperty('--corner', size + 'px');
   root.style.setProperty('--corner-shape', CORNER_SHAPES[S.deepCorners] || 'round');
@@ -81,9 +96,31 @@ function applyDeep() {
   set('motion', S.deepMotion, 'scale');
   set('titles', S.deepTitles, 'normal');
   set('dcFont', S.deepFont, 'system');
+  // A custom font (any font installed on the PC) wins over the presets; presets come from deep.css.
+  if (S.deepFont === 'custom' && (S.deepFontCustom || '').trim()) {
+    const fam = `"${S.deepFontCustom.trim().replace(/["']/g, '')}", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif`;
+    root.style.setProperty('--font-display', fam);
+    root.style.setProperty('--font', fam);
+  } else {
+    root.style.removeProperty('--font-display');
+    root.style.removeProperty('--font');
+  }
   d.fxGrain = S.fxGrain ? '1' : '';
   d.fxScan = S.fxScanlines ? '1' : '';
   d.fxHud = S.fxHud ? '1' : '';
+  set('dotUi', S.deepDotUi ? '1' : '', '');
+  document.documentElement.dataset.widgetDesign = ['classic', 'dot', 'mono', 'soft'].includes(S.widgetDesign) ? S.widgetDesign : 'classic';
+  document.documentElement.style.setProperty('--widget-design-color', S.widgetDesignColor === 'custom' ? (S.widgetDesignCustomColor || '#ef4444') : S.widgetDesignColor === 'white' ? '#fff' : S.widgetDesignColor === 'text' ? 'var(--text)' : 'var(--accent)');
+  // The clock widget's own renderer owns faces, sizes and colours (it knows about per-widget
+  // options too); deep customization just triggers a re-tick after changing the shared look.
+  if (typeof tickClock === 'function') tickClock();
+  document.querySelectorAll('[data-widget="batteries"], [data-widget="media"]').forEach(widget => { widget.dataset.design = ['classic', 'dot', 'mono', 'soft'].includes(S.widgetDesign) ? S.widgetDesign : 'classic'; });
+  const preview = $('.widget-style-preview');
+  if (preview) preview.dataset.design = ['classic', 'dot', 'mono', 'soft'].includes(S.widgetDesign) ? S.widgetDesign : 'classic';
+  root.style.setProperty('--lock-blur', `${Math.max(0, Math.min(30, Number(S.lockBlur) || 0))}px`);
+  root.style.setProperty('--lock-dim', String(Math.max(0, Math.min(.85, Number(S.lockDim) || 0))));
+  set('lockClock', S.lockClockStyle, 'classic');
+  document.documentElement.dataset.lockClock = S.lockLayout?.clockStyle || S.lockClockStyle || 'classic';
   refreshLiquid?.();
   updateLed();
   if (IS_SHELL && host) {
@@ -156,8 +193,17 @@ addEventListener('pointerdown', e => { lastClick = { x: e.clientX, y: e.clientY 
 
 /* ---------- Wallpaper switcher (Ctrl + Alt + W) ---------- */
 
+// Procedurally drawn image wallpapers that ship with the app (relative: same origin in the
+// app's virtual host and in the browser preview alike).
+const SHIPPED_WALLPAPERS = [
+  ['aurora-veil', 'Aurora Veil'], ['nebula', 'Nebula'], ['sunset-dunes', 'Sunset Dunes'], ['ocean-depth', 'Ocean Depth'],
+  ['bokeh-night', 'Bokeh Night'], ['mono-ridges', 'Mono Ridges'], ['topography', 'Topography'], ['dot-grid', 'Dot Grid'],
+  ['ember', 'Ember'], ['pastel-mesh', 'Pastel Mesh'],
+];
+
 function wallpaperChoices() {
   const list = Object.entries(WAVE_PALETTES).map(([id, p]) => ({ value: id, label: p.label, css: waveWallpaper(id) }));
+  for (const [file, label] of SHIPPED_WALLPAPERS) list.push({ value: { url: `wallpapers/${file}.jpg` }, label, css: `url("wallpapers/${file}.jpg") center / cover` });
   for (const url of S.myWallpapers || []) list.push({ value: { url }, label: 'Your picture', css: `url("${url}") center / cover` });
   list.unshift({ value: 'windows', label: 'Windows wallpaper', css: windowsWallpaperUrl ? `url("${windowsWallpaperUrl}") center / cover` : waveWallpaper('graphite') });
   return list;
@@ -176,8 +222,8 @@ function openWallpaperSwitcher() {
     el.addEventListener('mousedown', e => { if (e.target === el) closeOverlays(); });
     el.addEventListener('keydown', e => {
       const n = wallpaperChoices().length;
-      if (e.key === 'ArrowRight') { switcherIndex = (switcherIndex + 1) % n; renderSwitcher2(); }
-      else if (e.key === 'ArrowLeft') { switcherIndex = (switcherIndex - 1 + n) % n; renderSwitcher2(); }
+      if (e.key === 'ArrowRight') { hoverLockUntil = Date.now() + 700; switcherIndex = (switcherIndex + 1) % n; renderSwitcher2(); }
+      else if (e.key === 'ArrowLeft') { hoverLockUntil = Date.now() + 700; switcherIndex = (switcherIndex - 1 + n) % n; renderSwitcher2(); }
       else if (e.key === 'Enter') pickSwitcher(switcherIndex);
       else if (e.key === 'Escape') closeOverlays();
       else return;
@@ -186,6 +232,16 @@ function openWallpaperSwitcher() {
   }
   const choices = wallpaperChoices();
   switcherIndex = Math.max(0, choices.findIndex(c => JSON.stringify(c.value) === JSON.stringify(S.wallpaper)));
+  if (!el.dataset.wheel) {
+    el.dataset.wheel = '1';
+    el.addEventListener('wheel', e => {
+      e.preventDefault();
+      const n = wallpaperChoices().length;
+      hoverLockUntil = Date.now() + 700;
+      switcherIndex = (switcherIndex + (e.deltaY > 0 ? 1 : -1) + n) % n;
+      renderSwitcher2();
+    }, { passive: false });
+  }
   el.hidden = false;
   renderSwitcher2();
   syncShell();
@@ -198,10 +254,16 @@ function renderSwitcher2() {
   el.replaceChildren(
     h('div', { class: 'ws-title', text: 'Wallpaper' }),
     h('div', { class: 'ws-track', style: `--i:${switcherIndex}` },
-      ...choices.map((c, i) => h('button', { class: 'ws-card' + (i === switcherIndex ? ' on' : ''), style: `background:${c.css}`, onclick: e => { lastClick = { x: e.clientX, y: e.clientY }; pickSwitcher(i); }, onmouseenter: () => { if (switcherIndex !== i) { switcherIndex = i; renderSwitcher2(); } } },
+      ...choices.map((c, i) => h('button', { class: 'ws-card' + (i === switcherIndex ? ' on' : ''), style: `background:${c.css}`,
+        // Only the card the mouse genuinely moves onto takes over; after arrow keys or the
+        // wheel the stationary cursor sits over a card that slid underneath — ignore that,
+        // or the selection always snaps back to it.
+        onclick: e => { lastClick = { x: e.clientX, y: e.clientY }; pickSwitcher(i); },
+        onmouseenter: e => { if (Date.now() < hoverLockUntil || (e.movementX === 0 && e.movementY === 0)) return; if (switcherIndex !== i) { switcherIndex = i; renderSwitcher2(); } } },
         h('span', { text: c.label })))),
-    h('div', { class: 'ws-hint', text: '← → to browse · Enter to use · Esc to close' }));
+    h('div', { class: 'ws-hint', text: 'Scroll or ← → to browse · Enter to use · Esc to close' }));
 }
+let hoverLockUntil = 0;
 
 function pickSwitcher(i) {
   const c = wallpaperChoices()[i];
@@ -261,6 +323,7 @@ async function applyDeepTheme(t) {
   const look = structuredClone(t.look);
   if (t.echo) look.accent = (await wallpaperColour()) || S.accent;
   applyLook({ ...DEEP_DEFAULTS, lockLayout: undefined, ...look });
+  applyDeep();
   replayPreview();
 }
 
@@ -308,7 +371,8 @@ function resetDeep() {
 
 function themeMini(t) {
   const p = WAVE_PALETTES[t.look.wallpaper] || null;
-  const bg = t.echo ? 'var(--wp)' : p ? `linear-gradient(150deg, ${p.bg[0]}, ${p.waves[1][0]} 70%, ${p.bg[1]})` : 'var(--wp)';
+  const mid = p?.waves?.[1]?.[0] ?? p?.bg?.[1];
+  const bg = t.echo ? 'var(--wp)' : p && mid ? `linear-gradient(150deg, ${p.bg[0]}, ${mid} 70%, ${p.bg[1]})` : 'var(--wp)';
   const accent = ACCENTS[t.look.accent]?.[1] || t.look.accent || 'var(--accent)';
   const surf = THEMES[t.look.theme]?.surface ? `rgb(${THEMES[t.look.theme].surface})` : 'rgb(30 30 33)';
   const light = THEMES[t.look.theme]?.mode === 'light';
@@ -339,6 +403,19 @@ function replayPreview() {
   w.classList.add('dc-play');
 }
 
+function widgetDesignPreview() {
+  const preview = h('div', { class: 'widget-style-preview', 'data-design': S.widgetDesign || 'classic' },
+    h('div', { class: 'widget-style-preview-clock' },
+      h('b', { text: '09:41' }), h('span', { text: 'MON · MAY 18' })),
+    h('div', { class: 'widget-style-preview-row' },
+      h('i', { class: 'widget-style-preview-ring' }), h('span', {}, h('b', { text: 'Headphones' }), h('small', { text: '86% · Charging' }))),
+    h('div', { class: 'widget-style-preview-media' }, h('i'), h('span', {}, h('b', { text: 'Midnight City' }), h('small', { text: 'M83 · Hurry Up, We’re Dreaming' }))),
+  );
+  const old = $('.widget-style-preview');
+  if (old) old.replaceWith(preview);
+  return preview;
+}
+
 /* ---------- Lock screen editor ---------- */
 
 const LOCK_WIDGETS = {
@@ -346,7 +423,7 @@ const LOCK_WIDGETS = {
 };
 
 function defaultLockLayout() {
-  return { clockFont: 'display', clockSize: 100, clockWeight: 600, clockColor: 'white', clockPos: 'top', widgets: [{ type: 'media', col: 0, row: 0, size: 'w', style: 'glass' }, { type: 'battery', col: 2, row: 0, size: 's', style: 'glass' }] };
+  return { clockFont: 'display', clockSize: 100, clockWeight: 600, clockColor: 'white', clockPos: 'top', clockStyle: 'classic', widgets: [{ type: 'media', col: 0, row: 0, size: 'w', style: 'glass' }, { type: 'battery', col: 2, row: 0, size: 's', style: 'glass' }] };
 }
 
 function openLockEditor() {
@@ -378,11 +455,16 @@ function openLockEditor() {
   openModal('Lock Screen Editor', [
     h('p', { class: 'muted', style: 'margin:0 0 10px', text: 'Click an empty spot to add a widget; click a widget to resize, restyle or remove it. Changes show the next time you lock (Ctrl + L).' }),
     grid,
+    h('div', { class: 'sw-section', text: 'Background' }),
+    group(
+      row('Background blur', 'Soften the wallpaper behind the lock screen.', slider(0, 30, 1, S.lockBlur || 0, v => document.documentElement.style.setProperty('--lock-blur', v + 'px'), v => setPref('lockBlur', v))),
+      row('Background dim', 'Darken it so the clock and widgets read clearly.', slider(0, 85, 5, Math.round((S.lockDim || 0) * 100), v => document.documentElement.style.setProperty('--lock-dim', String(v / 100)), v => setPref('lockDim', v / 100)))),
     h('div', { class: 'sw-section', text: 'Clock' }),
     group(
       seg('Font', [['display', 'Display'], ['rounded', 'Rounded'], ['mono', 'Mono'], ['serif', 'Serif'], ['thin', 'Thin']], 'clockFont'),
       seg('Size', [[70, 'Small'], [100, 'Medium'], [135, 'Large']], 'clockSize'),
       seg('Colour', [['white', 'White'], ['accent', 'Accent'], ['soft', 'Soft']], 'clockColor'),
+      seg('Clock face', [['classic', 'Classic'], ['dots', 'Dot matrix'], ['mono', 'Mono'], ['soft', 'Soft']], 'clockStyle'),
       seg('Position', [['top', 'Top'], ['center', 'Centre']], 'clockPos')),
     h('div', { class: 'confirm-actions' },
       button('Reset Layout', () => { Object.assign(L, defaultLockLayout()); save2(); }),
@@ -402,6 +484,7 @@ function openLockEditor() {
     lock.dataset.clockColor = L?.clockColor || '';
     lock.dataset.clockPos = L?.clockPos || '';
     lock.style.setProperty('--clock-scale', String((L?.clockSize || 100) / 100));
+    lock.dataset.clockStyle = L?.clockStyle || S.lockClockStyle || 'classic';
     if (!L) return baseExtras();
     const box = $('#lock-extras');
     const key = JSON.stringify([L, media?.title, media?.playing, typeof pcBattery !== 'undefined' && pcBattery?.level, notifications.length, new Date().getMinutes()]);
@@ -467,7 +550,7 @@ async function setExplorerIcon(kind) {
 
 /* ---------- The page ---------- */
 
-addSettingsPage({ id: 'deep', label: 'Style Studio', icon: 'deep', color: '#141414', keys: 'deep customization themes corners border shadow window controls motion genie animation scanlines grain hud led spectrum wallpaper transition switcher lock screen editor explorer icon theme code surprise' }, 'customize');
+addSettingsPage({ id: 'deep', label: 'Style Studio', icon: 'deep', color: '#141414', keys: 'deep customization themes corners border shadow window controls motion genie animation scanlines grain hud led spectrum wallpaper transition switcher lock screen editor explorer icon theme code surprise font typeface custom' }, 'customize');
 NAV_ICONS.deep = '<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10 2.5v2.2M10 15.3v2.2M2.5 10h2.2M15.3 10h2.2M4.7 4.7l1.5 1.5M13.8 13.8l1.5 1.5M4.7 15.3l1.5-1.5M13.8 6.2l1.5-1.5"/></g><circle cx="15.5" cy="15.5" r="2.6" fill="#e5483a"/></svg>';
 
 // Themes now live on Deep Customization, not on Appearance.
@@ -550,14 +633,52 @@ PAGES.deep = () => {
       row('Open and close', 'How Haven’s windows and panels appear: Settings, search, App Library, Quick Controls, stacks. (App windows shrinking into the Dock is in Desktop & Dock.)'),
       h('div', { class: 'sw-pad dc-picks motion-picks' }, ...motion.map(motionCard)),
       row('Titles', 'Caps sets window and widget titles in capitals.', segmented([['normal', 'Normal'], ['caps', 'Caps']], S.deepTitles, v => setPref('deepTitles', v))),
-      row('Type', null, segmented([['system', 'System'], ['rounded', 'Rounded'], ['mono', 'Mono'], ['serif', 'Serif']], S.deepFont, v => setPref('deepFont', v)))),
+      row('Font', 'The typeface for all of Haven. Satoshi and Sora ship with the app; SF Pro is used if you have installed it yourself.', segmented([['system', 'System'], ['satoshi', 'Satoshi'], ['sora', 'Sora'], ['sfpro', 'SF Pro'], ['rounded', 'Rounded'], ['mono', 'Mono'], ['serif', 'Serif'], ['custom', 'Custom']], S.deepFont, v => setPref('deepFont', v))),
+      S.deepFont === 'sfpro' && row('SF Pro', 'Apple’s font ships with Macs, not PCs — if you’ve installed it yourself, Haven uses it; otherwise this falls back to Satoshi.', null),
+      S.deepFont === 'custom' && row('Custom font', 'Any font installed on this PC, by its exact name — e.g. Segoe UI Variable Display, Arial, Cascadia Code.',
+        (() => {
+          const inp = h('input', { class: 'field', style: 'width:240px', placeholder: 'Font name…', value: S.deepFontCustom || '', spellcheck: 'false' });
+          inp.addEventListener('change', () => { S.deepFontCustom = inp.value.trim(); save(); applyDeep(); toast(S.deepFontCustom ? `Font set to “${S.deepFontCustom}”` : 'Custom font cleared'); });
+          return inp;
+        })()),
+      row('Window opacity', 'Adjust the transparency of Haven panels.', slider(55, 100, 1, S.deepWindowOpacity, v => document.documentElement.style.setProperty('--window-opacity', v / 100), v => setPref('deepWindowOpacity', v))),
+      row('Window blur', 'Soft blur behind translucent surfaces.', slider(0, 30, 1, S.deepWindowBlur, v => document.documentElement.style.setProperty('--window-blur', v + 'px'), v => setPref('deepWindowBlur', v))),
+      row('Animation speed', null, slider(50, 160, 5, S.deepMotionSpeed, v => document.documentElement.style.setProperty('--motion-speed', v / 100), v => setPref('deepMotionSpeed', v))),
+      row('Motion curve', null, segmented([['smooth','Smooth'],['snappy','Snappy'],['linear','Linear']], S.deepMotionCurve, v => setPref('deepMotionCurve', v)))),
+
+    section('Cursor & boot'),
+    group(
+      row('Haven cursor', 'Changes the cursor only inside Haven; Windows applications keep their own cursor.', segmented([['system','System'],['dot','Dot'],['signal','Signal']], S.cursorStyle, v => setPref('cursorStyle', v))),
+      row('Startup splash', 'Show the dot-matrix Haven mark while the desktop starts.', toggle(!!S.bootSplash, v => setPref('bootSplash', v)))),
+
+    section('HUD overlay'),
+    group(
+      row('System telemetry', 'Show live memory and local clock readouts in the desktop corners.', toggle(!!S.hudTelemetry, v => setPref('hudTelemetry', v))),
+      row('Pointer coordinates', 'Show pointer position while moving over the Haven desktop.', toggle(!!S.hudPointer, v => setPref('hudPointer', v)))),
 
     section('Screen effects'),
     group(
+      row('Dot-matrix interface', 'An optional Nothing-inspired dotted treatment for Haven panels, widgets and controls. The standard Haven interface stays unchanged unless you turn this on.', toggle(!!S.deepDotUi, v => setPref('deepDotUi', v))),
       row('Dot grain', 'A fine dot texture over the desktop and Haven’s panels.', toggle(!!S.fxGrain, v => setPref('fxGrain', v))),
       row('Scanlines', 'CRT lines, for the Terminal and Deep Sea themes.', toggle(!!S.fxScanlines, v => setPref('fxScanlines', v))),
       row('HUD corners', 'Corner brackets on widgets and Haven’s windows.', toggle(!!S.fxHud, v => setPref('fxHud', v))),
       row('LED spectrum', 'Dot-matrix bars that move with whatever is playing. They hang under the menu bar, clear of the Dock.', toggle(!!S.fxLed, v => setPref('fxLed', v)))),
+
+    section('Desktop clock & widget design'),
+    group(
+      row('Clock face', 'The default remains Haven’s analogue clock. Choose digital, dotted matrix, a flip clock, a city clock or a world-clock grid.', segmented([['analog', 'Analogue'], ['digital', 'Digital'], ['dots', 'Dot matrix'], ['flip', 'Flip'], ['city', 'City'], ['grid', 'World Grid']], S.desktopClockFace || 'analog', v => setPref('desktopClockFace', v))),
+      row('Time display', 'Choose 12- or 24-hour time.', segmented([[false, '12-hour'], [true, '24-hour']], !!S.desktopClock24, v => { setPref('desktopClock24', v); tickClock(); })),
+      row('Show seconds', 'Include seconds in digital and dot-matrix faces.', toggle(!!S.desktopClockSeconds, v => { setPref('desktopClockSeconds', v); tickClock(); })),
+      row('Date', 'Show the weekday and date under digital clock faces.', toggle(!!S.desktopClockDate, v => { setPref('desktopClockDate', v); tickClock(); })),
+      row('Alignment', null, segmented([['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], S.desktopClockAlign || 'center', v => setPref('desktopClockAlign', v))),
+      row('Clock size', 'Adjust the digital digits.', slider(24, 90, 1, S.desktopClockSize || 48, v => { const el = $('[data-widget="clock"]'); el?.style.setProperty('--clock-size', `${v}px`); }, v => setPref('desktopClockSize', v))),
+      row('Dot spacing', 'Tune spacing for the dot-matrix face.', slider(0, 20, 1, Math.round((S.desktopClockTracking || .08) * 100), v => { const el = $('[data-widget="clock"]'); el?.style.setProperty('--clock-tracking', `${v / 100}em`); }, v => setPref('desktopClockTracking', v / 100))),
+      row('Clock color', null, segmented([['accent', 'Accent'], ['white', 'White'], ['text', 'Text']], S.desktopClockColor || 'accent', v => setPref('desktopClockColor', v))),
+      row('Widget style', 'Applies a coordinated style to the desktop clock, batteries and Now Playing widget. Preview changes live; the original style is the default.', segmented([['classic', 'Classic'], ['dot', 'Dot matrix'], ['mono', 'Mono'], ['soft', 'Soft']], S.widgetDesign || 'classic', v => setPref('widgetDesign', v))),
+      row('Widget colour', null, segmented([['accent', 'Accent'], ['white', 'White'], ['text', 'Text'], ['custom', 'Custom']], S.widgetDesignColor || 'accent', v => setPref('widgetDesignColor', v)),
+        (() => { const color = h('input', { type: 'color', class: 'widget-design-color-custom', value: S.widgetDesignCustomColor || '#ef4444', title: 'Custom widget design color', 'aria-label': 'Custom widget design color' }); color.addEventListener('input', () => { S.widgetDesignCustomColor = color.value; S.widgetDesignColor = 'custom'; applyTheme(); applyDeep(); save(); const preview = $('.widget-style-preview'); if (preview) preview.dataset.design = S.widgetDesign || 'classic'; }); return color; })()),
+      widgetDesignPreview(),
+      row('Save as a theme', 'Capture these settings with the rest of your current look.', button('Make a theme', () => promptText('Name your theme', 'My Widget Theme', name => setPref('savedLooks', [...(S.savedLooks || []), { id: Date.now().toString(36), name, look: currentLook() }]))))),
 
     section('Wallpaper'),
     group(
@@ -575,13 +696,51 @@ PAGES.deep = () => {
   ];
 };
 
+function showBootSplash() {
+  if (!IS_DESKTOP || !S.bootSplash || !host || sessionStorage.getItem('haven-splash-seen')) return;
+  sessionStorage.setItem('haven-splash-seen', '1');
+  const splash = $('#boot-splash');
+  if (!splash) return;
+  splash.hidden = false;
+  requestAnimationFrame(() => splash.classList.add('ready'));
+  setTimeout(() => { splash.classList.add('leaving'); setTimeout(() => { splash.hidden = true; splash.classList.remove('ready', 'leaving'); }, 650); }, 1450);
+}
+
+let hudTimer = 0;
+function updateHud() {
+  const hud = $('#hud-overlay');
+  if (!hud) return;
+  const on = IS_DESKTOP && (S.fxHud || S.hudTelemetry || S.hudPointer);
+  hud.hidden = !on;
+  hud.classList.toggle('show-telemetry', !!S.hudTelemetry);
+  hud.classList.toggle('show-pointer', !!S.hudPointer);
+  hud.classList.toggle('show-corners', !!S.fxHud);
+  if (on && S.hudTelemetry) {
+    const mem = performance.memory?.usedJSHeapSize;
+    $('#hud-readout').textContent = `${new Date().toLocaleTimeString()}  ·  HAVEN / LOCAL  ·  HEAP ${mem ? `${Math.round(mem / 1048576)} MB` : '—'}`;
+  }
+}
+function applyCursorStyle() {
+  const style = S.cursorStyle || 'system';
+  document.documentElement.dataset.cursor = ['dot', 'signal'].includes(style) ? style : 'system';
+}
+
 addEventListener('DOMContentLoaded', () => {
   applyDeep();
+  applyCursorStyle();
+  showBootSplash();
+  updateHud();
+  hudTimer = setInterval(updateHud, 1000);
+  if (IS_DESKTOP) addEventListener('pointermove', e => {
+    if (!S.hudPointer) return;
+    const out = $('#hud-pointer');
+    if (out) out.textContent = `${Math.round(e.clientX)}, ${Math.round(e.clientY)}`;
+  }, { passive: true });
   if (IS_SHELL) { loadLockEvent(); setInterval(loadLockEvent, 5 * 60000); }
 });
 
 {
   const baseRemote = onRemoteState;
   // eslint-disable-next-line no-global-assign
-  onRemoteState = function (next) { baseRemote(next); applyDeep(); };
+  onRemoteState = function (next) { baseRemote(next); applyDeep(); applyCursorStyle(); updateHud(); };
 }

@@ -7,81 +7,147 @@ namespace Haven;
 
 /// <summary>
 /// Live audio for Haven's visualizers: listens to whatever the PC is playing (WASAPI loopback,
-/// nothing is recorded or saved) and turns it into frequency bands, a short waveform and a beat
-/// flag about 30 times a second. Runs only while a visualizer is on screen.
+/// nothing recorded or saved) and turn it into frequency bands, a short waveform, and a beat flag
+/// ~30 times a second. I only run while a visualizer is on screen.
+/// Nothing blocks the UI thread: capture activation and disposal run on background threads,
+/// and I coalesce rapid subscribe/stop flapping with a short stop delay.
 /// </summary>
 sealed class AudioViz : IDisposable
 {
     const int FftSize = 2048, FftLog = 11, Bands = 64, WavePoints = 96;
     readonly HashSet<string> _subscribers = new();
     readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(33) };
+    readonly Dispatcher _dispatcher;
     readonly float[] _ring = new float[FftSize];
     readonly double[] _bands = new double[Bands], _peaks = new double[Bands];
     readonly Complex[] _fft = new Complex[FftSize];
     readonly object _lock = new();
-    WasapiLoopbackCapture? _capture;
+    WasapiRecorder? _capture;
+    WaveFormat? _format;
     string? _deviceId;
     int _ringPos, _sampleRate = 48000, _quietFrames;
     double _energyAvg, _ref = -40;
     float _wavePeak = 0.01f;
     DateTime _lastDeviceCheck;
+    bool _loggedData;
+    bool _captureBeingBuilt;
+    int _generation;                                  // discards stale async activations
+    readonly DispatcherTimer _stopDelay = new() { Interval = TimeSpan.FromMilliseconds(1200) };
 
     /// <summary>Raised on the UI thread: bands 0–100, waveform −100…100, beat.</summary>
     public event Action<int[], int[], bool>? Frame;
 
-    public AudioViz() => _timer.Tick += (_, _) => Tick();
+    public AudioViz()
+    {
+        _dispatcher = Dispatcher.CurrentDispatcher;
+        _timer.Tick += (_, _) => Tick();
+        _stopDelay.Tick += (_, _) => { _stopDelay.Stop(); StopNow(); };
+    }
 
     public void Subscribe(string who, bool on)
     {
         if (on) _subscribers.Add(who); else _subscribers.Remove(who);
-        if (_subscribers.Count > 0 && _capture == null) Start();
-        else if (_subscribers.Count == 0) Stop();
+        if (_subscribers.Count > 0) StartAsync();
+        else ScheduleStop();
     }
 
-    void Start()
+    /// <summary>I activate off the UI thread — WasapiRecorderBuilder can take seconds,
+    /// and blocking here froze the whole shell (Windows: "Application Hang"). I use a generation
+    /// counter to discard builds that got superseded while in flight.</summary>
+    void StartAsync()
     {
-        try
+        _stopDelay.Stop();
+        if (_capture != null || _captureBeingBuilt) return;
+        _captureBeingBuilt = true;
+        int gen = ++_generation;
+        Log.Info("Audio visualizer starting…");
+        Task.Run(async () =>
         {
-            using var en = new MMDeviceEnumerator();
-            var device = en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-            _deviceId = device.ID;
-            _capture = new WasapiLoopbackCapture(device);
-            _sampleRate = _capture.WaveFormat.SampleRate;
-            _capture.DataAvailable += OnData;
-            _capture.RecordingStopped += (_, _) => { };
-            _capture.StartRecording();
-            _timer.Start();
-        }
-        catch { _capture = null; }
+            try
+            {
+                using var en = new MMDeviceEnumerator();
+                var device = en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+                WasapiRecorder capture;
+                try
+                {
+                    // Everything the PC plays except Haven itself ("process loopback"). On some
+                    // audio drivers the older endpoint loopback only ever returns silence, so
+                    // that's just the fallback.
+                    capture = await new WasapiRecorderBuilder()
+                        .WithProcessLoopback((uint)Environment.ProcessId, ProcessLoopbackMode.ExcludeTargetProcessTree)
+                        .WithFormat(WaveFormat.CreateIeeeFloatWaveFormat(48000, 2))
+                        .BuildAsync();
+                }
+                catch (Exception e)
+                {
+                    Log.Info("Process loopback unavailable, using endpoint loopback: " + e.Message);
+                    capture = new WasapiRecorderBuilder().WithDevice(device).WithLoopbackCapture().Build();
+                }
+
+                _dispatcher.Invoke(() =>
+                {
+                    if (gen != _generation) { try { capture.Dispose(); } catch { } return; } // superseded
+                    _capture = capture;
+                    _deviceId = device.ID;
+                    _format = capture.WaveFormat;
+                    _sampleRate = _format.SampleRate;
+                    _captureBeingBuilt = false;
+                    capture.DataAvailable += OnData;
+                    capture.StartRecording();
+                    _timer.Start();
+                    Log.Info($"Audio visualizer listening to {device.FriendlyName} ({capture.WaveFormat})");
+                });
+            }
+            catch (Exception e)
+            {
+                Log.Info("Audio visualizer couldn't start: " + e.Message);
+                _dispatcher.Invoke(() => { if (gen == _generation) _captureBeingBuilt = false; });
+            }
+        });
     }
 
-    void Stop()
+    /// <summary>A short delay before actually stopping: theme switches and calm flapping
+    /// used to trigger stop→start storms, and each start blocked the UI thread.</summary>
+    void ScheduleStop()
     {
+        if (_capture == null && !_captureBeingBuilt) return;
+        _stopDelay.Stop();
+        _stopDelay.Start();
+    }
+
+    void StopNow()
+    {
+        _generation++;                                   // invalidates any build in flight
         _timer.Stop();
-        try { _capture?.StopRecording(); } catch { }
-        _capture?.Dispose();
+        var old = _capture;
         _capture = null;
+        _format = null;
+        _captureBeingBuilt = false;
+        if (old != null) Task.Run(() => { try { old.StopRecording(); } catch { } try { old.Dispose(); } catch { } });
         Array.Clear(_bands);
         Array.Clear(_peaks);
     }
 
-    void OnData(object? sender, WaveInEventArgs e)
+    void OnData(ReadOnlySpan<byte> buffer, AudioClientBufferFlags flags, long devicePosition, long qpcPosition)
     {
-        var fmt = _capture?.WaveFormat;
-        if (fmt == null || e.BytesRecorded == 0) return;
+        var fmt = _format;
+        if (fmt == null || buffer.Length == 0) return;
+        if (!_loggedData) { _loggedData = true; Log.Info($"Audio data arriving: {buffer.Length} bytes, {fmt.Encoding}, {fmt.BitsPerSample}-bit"); }
+        bool silent = (flags & AudioClientBufferFlags.Silent) != 0;
         int channels = fmt.Channels, bytesPer = fmt.BitsPerSample / 8, frame = bytesPer * channels;
+        bool isFloat = fmt.Encoding == WaveFormatEncoding.IeeeFloat || (fmt.Encoding == WaveFormatEncoding.Extensible && bytesPer == 4);
         lock (_lock)
         {
-            for (int i = 0; i + frame <= e.BytesRecorded; i += frame)
+            for (int i = 0; i + frame <= buffer.Length; i += frame)
             {
                 float sum = 0;
-                for (int c = 0; c < channels; c++)
-                {
-                    int o = i + c * bytesPer;
-                    sum += fmt.Encoding == WaveFormatEncoding.IeeeFloat || (fmt.Encoding == WaveFormatEncoding.Extensible && bytesPer == 4)
-                        ? BitConverter.ToSingle(e.Buffer, o)
-                        : bytesPer == 2 ? BitConverter.ToInt16(e.Buffer, o) / 32768f : 0;
-                }
+                if (!silent)
+                    for (int c = 0; c < channels; c++)
+                    {
+                        int o = i + c * bytesPer;
+                        sum += isFloat ? BitConverter.ToSingle(buffer.Slice(o, 4))
+                            : bytesPer == 2 ? BitConverter.ToInt16(buffer.Slice(o, 2)) / 32768f : 0;
+                    }
                 _ring[_ringPos] = sum / channels;
                 _ringPos = (_ringPos + 1) % FftSize;
             }
@@ -90,7 +156,10 @@ sealed class AudioViz : IDisposable
 
     void Tick()
     {
-        // Follow the default output device (headphones plugged in, etc.).
+        if (_capture == null || _captureBeingBuilt) return;
+
+        // Follow the default output device (headphones plugged in, etc.) — checked off the
+        // hot path every 4 seconds; a device change just schedules a fresh async start.
         if ((DateTime.Now - _lastDeviceCheck).TotalSeconds > 4)
         {
             _lastDeviceCheck = DateTime.Now;
@@ -98,7 +167,7 @@ sealed class AudioViz : IDisposable
             {
                 using var en = new MMDeviceEnumerator();
                 var id = en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia).ID;
-                if (id != _deviceId) { Stop(); Start(); return; }
+                if (id != _deviceId) { StopNow(); StartAsync(); return; }
             }
             catch { }
         }
@@ -162,5 +231,13 @@ sealed class AudioViz : IDisposable
         Frame?.Invoke(bands, wave, beat);
     }
 
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        _stopDelay.Stop();
+        _timer.Stop();
+        _generation++;
+        var old = _capture;
+        _capture = null;
+        if (old != null) Task.Run(() => { try { old.StopRecording(); } catch { } try { old.Dispose(); } catch { } });
+    }
 }

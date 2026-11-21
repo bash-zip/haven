@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Haven;
 
 /// <summary>
-/// Takes over Alt+Tab while Haven runs, so Haven can show an app switcher (one icon per app,
+/// Takes over Alt+Tab while Haven runs so Haven can show an app switcher (one icon per app,
 /// like Cmd+Tab on a Mac). Tab and Shift+Tab move the selection, arrows too, Esc cancels,
 /// releasing Alt switches.
 /// </summary>
@@ -14,16 +14,35 @@ sealed class SwitcherHook : IDisposable
     const uint LLKHF_ALTDOWN = 0x20, LLKHF_INJECTED = 0x10;
 
     delegate IntPtr HookProc(int code, IntPtr wParam, IntPtr lParam);
+    [StructLayout(LayoutKind.Sequential)] struct KBDLLHOOKSTRUCT { public uint vkCode, scanCode, flags, time; public IntPtr extra; }
+
+    [DllImport("user32.dll", SetLastError = true)] static extern bool PostThreadMessage(uint threadId, uint msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] static extern int GetMessage(out MSG msg, IntPtr hWnd, uint min, uint max);
+    [DllImport("user32.dll")] static extern bool PeekMessage(out MSG msg, IntPtr hWnd, uint min, uint max, uint remove);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
 
     [StructLayout(LayoutKind.Sequential)]
-    struct KBDLLHOOKSTRUCT { public uint vkCode, scanCode, flags, time; public IntPtr extra; }
+    struct MSG { public IntPtr hwnd; public uint message; public IntPtr wParam, lParam; uint time; public POINT pt; }
+    [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
 
     readonly HookProc _proc;
-    readonly IntPtr _hook;
-    bool _active;
+    IntPtr _hook;
+    readonly Thread _thread;
+    uint _threadId;
+    readonly EventWaitHandle _ready = new(false, EventResetMode.ManualReset);
+    Exception? _startError;
 
-    public bool Enabled { get; set; } = true;
-    public bool Installed => _hook != IntPtr.Zero;
+    volatile bool _active;
+    bool _disposed;
+    Timer? _altRecovery;
+
+    public bool Installed => _hook != IntPtr.Zero && _thread.IsAlive;
+    bool _enabled = true;
+    public bool Enabled
+    {
+        get => _enabled;
+        set { _enabled = value; if (!value) ResetFromUi(); }
+    }
     /// <summary>Haven answers the Windows key and its shortcuts instead of Windows (Start, Task View, Search…).</summary>
     public bool TakeOver { get; set; } = true;
     /// <summary>A Windows shortcut Haven took over: launchpad, mission, desktop, control, notifications,
@@ -53,13 +72,68 @@ sealed class SwitcherHook : IDisposable
     public SwitcherHook()
     {
         _proc = OnKey;
+        // The hook lives on its own thread with a message pump: a busy WPF/WebView2 UI
+        // thread must never stall keyboard delivery system-wide, or Windows silently
+        // drops the hook and Alt+Tab stops working (or the switcher gets stuck open).
+        _thread = new Thread(RunHookPump) { IsBackground = true, Name = "Haven keyboard hook" };
+        _thread.Start();
+        _ready.WaitOne(TimeSpan.FromSeconds(3));
+        if (_startError != null) throw _startError;
+    }
+
+    /// <summary>Installs the hook on this thread and pumps messages until Dispose.</summary>
+    void RunHookPump()
+    {
+        _threadId = GetCurrentThreadId();
+        // Create this thread's Win32 message queue before any other thread posts to it.
+        PeekMessage(out _, IntPtr.Zero, 0, 0, 0);
+        _altRecovery = new Timer(_ =>
+        {
+            if (!_active || _disposed || GetAsyncKeyState((int)VK_MENU) < 0) return;
+            PostThreadMessage(_threadId, 0x8002 /* WM_APP + 2: Alt release recovery */, IntPtr.Zero, IntPtr.Zero);
+        }, null, Timeout.Infinite, Timeout.Infinite);
         _hook = SetWindowsHookEx(WH_KEYBOARD_LL, _proc, GetModuleHandle(null), 0);
+        if (_hook == IntPtr.Zero)
+            _startError = new InvalidOperationException($"Windows refused the keyboard hook (error {Marshal.GetLastWin32Error()}).");
+        _ready.Set();
+        if (_hook == IntPtr.Zero) return;
+        int result;
+        while ((result = GetMessage(out var msg, IntPtr.Zero, 0, 0)) > 0)
+        {
+            if (msg.message == 0x8001) EndActive("cancel");
+            else if (msg.message == 0x8002) RecoverReleasedAlt();
+        }
+        UnhookWindowsHookEx(_hook);
+        _hook = IntPtr.Zero;
+    }
+
+    /// <summary>If Windows no longer reports Alt down, repair a lost key-up on the hook thread.</summary>
+    void RecoverReleasedAlt()
+    {
+        if (_active && GetAsyncKeyState((int)VK_MENU) >= 0)
+        {
+            EndActive("commit");
+            Native.KeyUp(0x12); // make sure Windows' Alt state clears too
+        }
+    }
+
+    void EndActive(string command)
+    {
+        _active = false;
+        _altRecovery?.Change(Timeout.Infinite, Timeout.Infinite);
+        Raise(command);
+    }
+
+    void ResetFromUi()
+    {
+        if (_thread.IsAlive && _threadId != 0) PostThreadMessage(_threadId, 0x8001 /* WM_APP + 1 */, IntPtr.Zero, IntPtr.Zero);
     }
 
     IntPtr OnKey(int code, IntPtr wParam, IntPtr lParam)
     {
         if (code >= 0 && Locked)
         {
+            if (_active) EndActive("cancel");
             var lk = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
             bool altHeld = (lk.flags & LLKHF_ALTDOWN) != 0, ctrlHeld = GetAsyncKeyState(0x11) < 0;
             int lmsg = wParam.ToInt32();
@@ -84,7 +158,7 @@ sealed class SwitcherHook : IDisposable
             if ((w.flags & LLKHF_INJECTED) != 0 && w.vkCode == 0xE8 && _winDown) _maskSeen = true;
             if ((w.flags & LLKHF_INJECTED) == 0 && OnWindowsKey(w, wParam.ToInt32())) return new IntPtr(1);
         }
-        if (code >= 0 && Enabled)
+        if (code >= 0 && Enabled && (Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam).flags & LLKHF_INJECTED) == 0)
         {
             var k = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
             int msg = wParam.ToInt32();
@@ -98,6 +172,7 @@ sealed class SwitcherHook : IDisposable
                 if (!_active)
                 {
                     _active = true;
+                    _altRecovery?.Change(100, 100);
                     // A harmless key press, so releasing Alt later doesn't open the app's menu bar.
                     Native.PressKeys(0xE8);
                     Raise("open");
@@ -113,14 +188,17 @@ sealed class SwitcherHook : IDisposable
             }
             if (_active && down && k.vkCode == VK_ESCAPE)
             {
-                _active = false;
-                Raise("cancel");
+                EndActive("cancel");
                 return new IntPtr(1);
             }
             if (_active && up && k.vkCode is VK_MENU or VK_LMENU or VK_RMENU)
             {
-                _active = false;
-                Raise("commit");
+                // Swallow the real Alt-up (Windows never saw our Tab, so it must not act on the Alt),
+                // then tell Windows Alt came up anyway: it saw Alt go down, and if it never sees a
+                // release it holds the modifier down and every letter becomes a shortcut.
+                EndActive("commit");
+                Native.KeyUp(0x12 /* VK_MENU */);
+                return new IntPtr(1);
             }
         }
         return CallNextHookEx(_hook, code, wParam, lParam);
@@ -185,7 +263,6 @@ sealed class SwitcherHook : IDisposable
             string? plain = k.vkCode switch
             {
                 VK_ESCAPE when ctrl && !alt => "launchpad",          // Ctrl+Esc opens Start
-                0x2C when !ctrl && !alt => "shotFull",              // Print Screen opens the Snipping Tool
                 _ => null,
             };
             if (plain == null) return false;
@@ -206,13 +283,12 @@ sealed class SwitcherHook : IDisposable
             0x57 /* W */ => "desktop",                              // Widgets board: Haven's widgets live on the desktop
             0x41 /* A */ => "control",                              // Quick Settings
             0x4E /* N */ => "notifications",
-            0x53 /* S */ => shift ? "shotRegion" : "search",
+            0x53 /* S */ when !shift => "search",                  // Win+Shift+S stays Windows' (Snipping Tool)
             0x51 /* Q */ => "search",
             0x56 /* V */ when ClipboardHistory.Listening => "clipboard", // Haven's clipboard history instead of Windows'
             0x86 /* F23, the Copilot key */ => "search",
             0x49 /* I */ => "settings",
             0x58 /* X */ => "logo",
-            0x2C /* Print Screen */ => "shotFull",
             0x54 /* T */ or 0x42 /* B */ or 0xBC /* , */ => "none", // these would pop up the hidden taskbar
             VK_LEFT when !shift => "snap:left",
             VK_RIGHT when !shift => "snap:right",
@@ -233,7 +309,15 @@ sealed class SwitcherHook : IDisposable
     void Raise(string command) =>
         System.Windows.Application.Current.Dispatcher.BeginInvoke(() => Command?.Invoke(command));
 
-    public void Dispose() => UnhookWindowsHookEx(_hook);
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _altRecovery?.Dispose();
+        if (_thread.IsAlive && _threadId != 0) PostThreadMessage(_threadId, 0x0012 /* WM_QUIT */, IntPtr.Zero, IntPtr.Zero);
+        _thread.Join(TimeSpan.FromSeconds(1));
+        _ready.Dispose();
+    }
 
     [DllImport("user32.dll")] static extern IntPtr SetWindowsHookEx(int id, HookProc proc, IntPtr mod, uint thread);
     [DllImport("user32.dll")] static extern bool UnhookWindowsHookEx(IntPtr hook);

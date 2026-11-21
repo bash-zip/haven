@@ -49,14 +49,34 @@ if ($env:HAVEN_SIGN_THUMBPRINT) {
 
 $zipName = "Haven-$Version-win-x64.zip"
 $zip = Join-Path $out $zipName
-Compress-Archive -Path $app -DestinationPath $zip -CompressionLevel Optimal
+# Compress-Archive (PowerShell 5.1) writes entry names with BACKSLASHES, which breaks
+# extraction into the wrong (nested) folders. Use the .NET zip API: forward slashes always.
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+if (Test-Path $zip) { Remove-Item $zip -Force }
+[System.IO.Compression.ZipFile]::CreateFromDirectory($app, $zip, [System.IO.Compression.CompressionLevel]::Optimal, $true) # includeBaseDirectory: the zip keeps its Haven/ folder
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
 
 $url = if ($Repo) { "https://github.com/$Repo/releases/download/v$Version/$zipName" } else { $zipName }
 $json = [ordered]@{ version = $Version; url = $url; sha256 = $hash; notes = $Notes } | ConvertTo-Json
 [IO.File]::WriteAllText((Join-Path $out 'latest.json'), $json, (New-Object Text.UTF8Encoding $false))
 
+# HavenSetup.exe: one file to double-click, carrying the zip above.
+Write-Host 'Building HavenSetup.exe...'
+$setupDir = Join-Path $root 'Setup'
+Copy-Item $zip (Join-Path $setupDir 'payload.zip') -Force
+$setupOut = Join-Path $out 'setup-build'
+dotnet publish (Join-Path $setupDir 'Setup.csproj') -c Release -p:Version=$Version -o $setupOut --nologo -v q
+if ($LASTEXITCODE -ne 0) { throw 'Setup build failed.' }
+$setupExe = Join-Path $out "HavenSetup-$Version.exe"
+Move-Item (Join-Path $setupOut 'HavenSetup.exe') $setupExe -Force
+Remove-Item $setupOut -Recurse -Force
+Remove-Item (Join-Path $setupDir 'payload.zip') -Force
+if ($env:HAVEN_SIGN_THUMBPRINT) {
+    & signtool.exe sign /sha1 $env:HAVEN_SIGN_THUMBPRINT /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $setupExe
+}
+
 Write-Host ''
 Write-Host "Done: $zip"
+Write-Host "Setup: $setupExe"
 Write-Host "SHA-256 $hash"
 if ($Repo) { Write-Host "Publish: gh release create v$Version `"$zip`" `"$(Join-Path $out 'latest.json')`" --title `"Haven $Version`"" }

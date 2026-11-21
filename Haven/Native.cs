@@ -87,7 +87,12 @@ static class Native
     {
         if (!GetWindowRect(hwnd, out var r)) return false;
         var m = PrimaryMonitor();
-        return r.Left <= m.Left && r.Top <= m.Top && r.Right >= m.Right && r.Bottom >= m.Bottom;
+        if (!(r.Left <= m.Left && r.Top <= m.Top && r.Right >= m.Right && r.Bottom >= m.Bottom)) return false;
+        // A maximized window's rect also covers the monitor (its invisible borders poke out
+        // past the edges), but it keeps its caption. Real fullscreen windows don't.
+        const int GWL_STYLE = -16;
+        const long WS_CAPTION = 0x00C00000;
+        return (GetWindowLongPtr(hwnd, GWL_STYLE).ToInt64() & WS_CAPTION) == 0;
     }
 
     public static void SetExStyle(IntPtr hwnd, int add, int remove)

@@ -5,11 +5,11 @@ namespace Haven;
 
 /// <summary>
 /// Windows reacts to 3- and 4-finger swipes and taps itself (app switcher, Task View, Search,
-/// notifications). While Haven's gestures are on, every one of them is set to "Nothing" so only
-/// Haven answers, and each is put back exactly as it was when Haven exits. The original values
+/// notifications). While my gestures are on, I set every one of them to "Nothing" so only
+/// Haven answers, and I put each one back exactly as it was when I exit. The original values
 /// are saved to disk first, so a crash can always be undone (by the watchdog, or the next start).
 ///
-/// Windows only reads these settings when you sign in. So when Haven starts at sign-in and the
+/// Windows only reads these settings when you sign in. So when I start at sign-in and the
 /// session ends (sign-out, restart), the settings are deliberately left off: the next sign-in
 /// then starts with Windows' gestures already out of the way.
 /// </summary>

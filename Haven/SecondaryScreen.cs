@@ -67,6 +67,12 @@ sealed class SecondaryScreen : Window
                 Marshal.StructureToPtr(pos, lParam, false);
             }
         }
+        else if (msg == Native.WM_DPICHANGED)
+        {
+            // A per-monitor DPI change can nudge the WPF window off its exact physical rect
+            // (same class of drift the desktop layer guards against) — pin it back.
+            Dispatcher.BeginInvoke(Place);
+        }
         return IntPtr.Zero;
     }
 

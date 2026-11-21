@@ -3,7 +3,7 @@ using Microsoft.Win32;
 namespace Haven;
 
 /// <summary>
-/// Spaces, built on Windows' virtual desktops. The list and the current desktop come from where
+/// Spaces, built on Windows' virtual desktops. I read the list and current desktop from where
 /// Windows records them; switching, adding and closing use Windows' own shortcuts
 /// (Ctrl+Win+←/→, Ctrl+Win+D, Ctrl+Win+F4), which stay stable across Windows versions.
 /// </summary>

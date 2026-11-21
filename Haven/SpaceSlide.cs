@@ -43,6 +43,7 @@ sealed class SpaceSlide : Window
         Height = SystemParameters.PrimaryScreenHeight;
         Background = new SolidColorBrush(Color.FromRgb(12, 12, 14));
         _hwnd = new WindowInteropHelper(this).EnsureHandle();
+        ScreenFit.CoverMonitor(this);
         Native.SetExStyle(_hwnd, Native.WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW, 0);
     }
 
@@ -64,7 +65,7 @@ sealed class SpaceSlide : Window
         if (!_bounce)
         {
             // A minimized window has nothing to show; bring it back (without activating it) for the preview.
-            if (IsIconic(target)) { Native.ShowWindow(target, Native.SW_SHOWNOACTIVATE); _restoredTarget = true; }
+            if (IsIconic(target)) { WindowAnimator.Skip(target); Native.ShowWindow(target, Native.SW_SHOWNOACTIVATE); _restoredTarget = true; }
             Add(desktop, true);
             Add(target, true);
         }
@@ -157,7 +158,7 @@ sealed class SpaceSlide : Window
         _thumbs.Clear();
         Native.ShowWindow(_hwnd, Native.SW_HIDE);
         if (_rendering) { CompositionTarget.Rendering -= OnFrame; _rendering = false; }
-        if (cancelled && _restoredTarget) Native.ShowWindow(_target, Native.SW_MINIMIZE);
+        if (cancelled && _restoredTarget) { WindowAnimator.Skip(_target); Native.ShowWindow(_target, Native.SW_MINIMIZE); }
         _active = false;
         _settling = false;
         var done = _onDone;

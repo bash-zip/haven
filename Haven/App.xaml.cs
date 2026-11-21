@@ -55,6 +55,35 @@ public partial class App : Application
         // A downloaded copy offers to install itself on first run.
         if (Installer.OfferOnFirstRun(e.Args)) { Shutdown(); return; }
 
+        // Crash-loop guard: if a sign-in boot keeps dying (three starts inside 15 minutes),
+        // turn start-at-sign-in off so a broken build can't trap the user's machine every
+        // logon. A normal manual launch still works, which is how they get back in.
+        try
+        {
+            if (e.Args.Contains("--startup"))
+            {
+                var guardPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Haven", "boot-guard.json");
+                var times = new List<DateTime>();
+                if (File.Exists(guardPath))
+                    times = JsonSerializer.Deserialize<List<DateTime>>(File.ReadAllText(guardPath)) ?? new();
+                var now = DateTime.UtcNow;
+                times.RemoveAll(t => now - t > TimeSpan.FromMinutes(15));
+                if (times.Count >= 2)
+                {
+                    Log.Info("Crash-loop guard: disabling start at sign-in after repeated failed boots.");
+                    ShellHost.Autostart = false;
+                    File.Delete(guardPath);
+                }
+                else
+                {
+                    times.Add(now);
+                    Directory.CreateDirectory(Path.GetDirectoryName(guardPath)!);
+                    File.WriteAllText(guardPath, JsonSerializer.Serialize(times));
+                }
+            }
+        }
+        catch { /* the guard must never block a normal start */ }
+
         _single = new Mutex(true, @"Local\Haven.Desktop", out bool first);
         if (!first)
         {
@@ -66,12 +95,27 @@ public partial class App : Application
         AppDomain.CurrentDomain.ProcessExit += (_, _) => { Taskbar.Restore(); WindowsGestures.Restore(); WindowAnimator.RestoreOsAnimation(); WindowStyler.RestoreAll(); };
         AppDomain.CurrentDomain.UnhandledException += (_, args) => { Log.Crash("app", args.ExceptionObject as Exception); Taskbar.Restore(); WindowsGestures.Restore(); WindowAnimator.RestoreOsAnimation(); };
         TaskScheduler.UnobservedTaskException += (_, args) => { Log.Error("task", args.Exception?.GetBaseException().ToString() ?? "?"); args.SetObserved(); };
+        bool crashing = false;
         DispatcherUnhandledException += (_, args) =>
         {
             Log.Crash("ui", args.Exception);
+            // A web view being torn down (display change, quit) can still receive timer or
+            // bridge callbacks. That's teardown noise: swallow it and keep the desktop alive
+            // instead of dying into a half-quit state that leaves input and hooks hanging.
+            if (Bridge.IsDisposed(args.Exception))
+            {
+                args.Handled = true;
+                return;
+            }
             Taskbar.Restore();
             WindowsGestures.Restore();
             WindowAnimator.RestoreOsAnimation();
+            // One dialog, then exit. Re-entering while the first box is up used to pile up
+            // boxes on a dying UI thread and leave the shell window frozen but focused, which
+            // looked like "the keyboard stopped working".
+            args.Handled = true;
+            if (crashing) return;
+            crashing = true;
             MessageBox.Show(args.Exception.Message, "Haven ran into a problem", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown();
         };

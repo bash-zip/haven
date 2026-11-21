@@ -4,7 +4,7 @@ namespace Haven;
 
 /// <summary>
 /// Frosted-glass panes that sit directly behind the menu bar and Dock. A web page can only blur
-/// its own content, so real "glass" over other apps' windows comes from these small native
+/// its own content, so I get real "glass" over other apps' windows from these small native
 /// windows, which ask Windows to draw an acrylic blur of whatever is behind them.
 /// </summary>
 sealed class GlassPlates
@@ -14,6 +14,15 @@ sealed class GlassPlates
     readonly List<Native.RawWindow> _windows = new();
     readonly List<Plate> _current = new();
     bool _suspended;
+    uint _tint = 0x01000000;
+
+    /// <summary>Colour mixed into the blur, as AABBGGRR (follows the theme, so the bar matches it).</summary>
+    public void SetTint(uint tint)
+    {
+        if (tint == _tint) return;
+        _tint = tint;
+        foreach (var w in _windows) EnableAcrylic(w.Handle, _tint);
+    }
 
     public void Set(IReadOnlyList<Plate> plates, IntPtr shellLayer)
     {
@@ -25,7 +34,7 @@ sealed class GlassPlates
         var rects = plates.Where(p => p.Width > 0 && p.Height > 0)
             .Select(p => new Native.RECT(p.X, p.Y, p.X + p.Width, p.Y + p.Height)).ToList();
 
-        while (_windows.Count < rects.Count) _windows.Add(CreatePlate());
+        while (_windows.Count < rects.Count) _windows.Add(CreatePlate(_tint));
         for (int i = 0; i < _windows.Count; i++)
         {
             var h = _windows[i].Handle;
@@ -61,19 +70,19 @@ sealed class GlassPlates
         _windows.Clear();
     }
 
-    static Native.RawWindow CreatePlate()
+    static Native.RawWindow CreatePlate(uint tint)
     {
         var w = new Native.RawWindow("HavenGlassPlate", Native.WS_POPUP,
             Native.WS_EX_TOOLWINDOW | Native.WS_EX_TOPMOST | Native.WS_EX_NOACTIVATE | 0x20 /* TRANSPARENT: clicks pass */,
             new Native.RECT());
-        EnableAcrylic(w.Handle);
+        EnableAcrylic(w.Handle, tint);
         return w;
     }
 
-    static void EnableAcrylic(IntPtr hwnd)
+    static void EnableAcrylic(IntPtr hwnd, uint tint)
     {
-        // Acrylic blur behind the window with an almost clear tint; the shell layer adds its own tint on top.
-        var accent = new ACCENT_POLICY { AccentState = 4 /* ACRYLICBLURBEHIND */, GradientColor = 0x01000000 };
+        // Acrylic blur behind the window, tinted with the theme colour; the shell layer adds its own tint on top.
+        var accent = new ACCENT_POLICY { AccentState = 4 /* ACRYLICBLURBEHIND */, GradientColor = tint };
         int size = Marshal.SizeOf<ACCENT_POLICY>();
         var ptr = Marshal.AllocHGlobal(size);
         try

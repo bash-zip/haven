@@ -7,9 +7,9 @@ using Anthropic.Models.Beta.Messages;
 namespace Haven;
 
 /// <summary>
-/// "Ask Claude" in Haven's search: a short question gets a streamed answer right under the
-/// search field. The API key is stored encrypted for this Windows account (DPAPI), never in
-/// Haven's settings file, which the web UI can read.
+/// "Ask Claude" in Haven's search: I stream a short answer right under the search field.
+/// Stores the API key encrypted for this Windows account (DPAPI), never in Haven's settings file
+/// where the web UI could read it.
 /// </summary>
 static class ClaudeAsk
 {
@@ -40,7 +40,7 @@ static class ClaudeAsk
 
     public static void Cancel() => _current?.Cancel();
 
-    /// <summary>Streams an answer: onText for each piece, then onDone (null) or onDone(error message).</summary>
+    /// <summary>I stream an answer: onText for each piece, then onDone(null) or onDone(error).</summary>
     public static async Task AskAsync(string question, Action<string> onText, Action<string?> onDone)
     {
         _current?.Cancel();

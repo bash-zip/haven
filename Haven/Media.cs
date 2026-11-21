@@ -17,6 +17,20 @@ static class Media
 
     public static async Task<NowPlaying?> NowPlayingAsync(bool includeArt = true)
     {
+        try { return await NowPlayingCoreAsync(includeArt); }
+        catch
+        {
+            // The cached session can go stale when the media app restarts (SMTC keeps handing
+            // out a dead one). Ask for a fresh manager once before giving up.
+            _manager = null;
+            _artKey = null; _art = null;
+            try { return await NowPlayingCoreAsync(includeArt); }
+            catch { return null; }
+        }
+    }
+
+    static async Task<NowPlaying?> NowPlayingCoreAsync(bool includeArt)
+    {
         var session = (await Manager()).GetCurrentSession();
         if (session == null) return null;
         var props = await session.TryGetMediaPropertiesAsync();

@@ -3,9 +3,9 @@ using System.Windows.Automation;
 namespace Haven;
 
 /// <summary>
-/// The menus of the app in front (File, Edit, View…), read through Windows' accessibility
+/// Reads the menus of the app in front (File, Edit, View…) through Windows' accessibility
 /// interface (UI Automation), so Haven's menu bar can show the real ones and open them.
-/// Apps that draw their own menus or have none simply keep Haven's menus.
+/// If an app draws its own menus or has none, I just keep Haven's menus.
 /// </summary>
 static class AppMenus
 {
@@ -16,7 +16,7 @@ static class AppMenus
     {
         if (hwnd == _cachedFor) return _cached;
         var work = Task.Run(() => Items(hwnd).Select(i => Clean(i.Current.Name)).Where(n => n.Length > 0).ToList());
-        // Never let a slow app hold up the menu bar.
+        // Don't let a slow app hold up the menu bar.
         var done = await Task.WhenAny(work, Task.Delay(900));
         var names = done == work && work.IsCompletedSuccessfully ? work.Result : new List<string>();
         _cachedFor = hwnd;
@@ -24,7 +24,7 @@ static class AppMenus
         return names;
     }
 
-    /// <summary>Opens one of the app's menus (its own dropdown appears, exactly as if clicked).</summary>
+    /// <summary>I open one of the app's menus (its own dropdown appears, exactly as if clicked).</summary>
     public static Task OpenAsync(IntPtr hwnd, int index) => Task.Run(() =>
     {
         var items = Items(hwnd);

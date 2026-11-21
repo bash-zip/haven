@@ -186,7 +186,10 @@ static class ClipboardHistory
     {
         Directory.CreateDirectory(ImageDir);
         var path = Path.Combine(ImageDir, Guid.NewGuid().ToString("N") + ".png");
-        Screenshots.WritePng(image, path);
+        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(image));
+        using var fs = File.Create(path);
+        encoder.Save(fs);
         return Paths.Url(path);
     }
 

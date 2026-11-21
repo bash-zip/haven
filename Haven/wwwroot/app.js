@@ -1,5 +1,17 @@
 'use strict';
 
+// Optional parts are written as `condition && element`; when the condition is false that leaves
+// null/false/undefined, which the DOM would print as text ("null"). Skip them everywhere.
+for (const name of ['replaceChildren', 'append', 'prepend', 'before', 'after']) {
+  for (const proto of [Element.prototype, DocumentFragment.prototype]) {
+    const base = proto[name];
+    if (!base || base.__havenSafe) continue;
+    const safe = function (...nodes) { return base.apply(this, nodes.filter(n => n !== null && n !== undefined && n !== false && n !== true)); };
+    safe.__havenSafe = true;
+    proto[name] = safe;
+  }
+}
+
 /* =========================================================================
    Haven: desktop shell UI.
 
@@ -90,7 +102,7 @@ function onHostEvent(name, data) {
     case 'search': openSpotlight(); break;
     case 'notice': toast(data); break;
     case 'desktopChanged': loadDesktop(); break;
-    case 'displayChanged': applyScale(); if (IS_DESKTOP) renderDesktopIcons(); break;
+    case 'displayChanged': applyScale(); if (IS_DESKTOP) { renderDesktopIcons(); placeWidgets(); } break;
     case 'dockOverlap': dockOverlap = !!data; updateDockVisibility(); break;
     case 'switcher': onSwitcher(data); break;
     case 'slid': Sound.play('switch'); break;
@@ -101,7 +113,7 @@ function onHostEvent(name, data) {
     case 'claude': onClaudeEvent(data); break;
     case 'hotCorner': runAction(S.hotCorners?.[data] || 'none'); break;
     case 'attention': onAttention(data); break;
-    case 'windowsChanged': clearTimeout(windowsTimer); windowsTimer = setTimeout(pollWindowsNow, 120); break;
+    case 'windowsChanged': clearTimeout(windowsTimer); windowsTimer = setTimeout(pollWindowsNow, 120); if (typeof refreshSwitcherWindows === 'function') refreshSwitcherWindows(); break;
   }
 }
 
@@ -154,23 +166,30 @@ const DEFAULTS = {
   name: '',
   city: null,            // { name, admin, lat, lon }; null = use this PC's location
   units: 'c',
-  theme: 'dark',         // auto | light | dark
-  wallpaper: 'windows',  // 'windows' | preset id | { url }
+  theme: 'glass',         // auto | light | dark; theme surface is the fresh-install default
+  wallpaper: 'aurora',    // 'windows' | preset id | { url }
+  wallpaperFit: 'cover', // cover | contain | stretch | center; for photo wallpapers
+  wallpaperX: 50,        // photo wallpaper focal position, percent
+  wallpaperY: 50,
   dock: null,            // app ids; null until first run picks defaults
   reminders: [],         // { id, text, done }
-  hidden: [],            // widget ids the user removed
+  // Keep a fresh desktop calm: clock, calendar and weather stay visible; the full widget
+  // gallery is still one click away in edit mode. Existing saved states keep their choices.
+  hidden: ['batteries', 'reminders', 'media', 'notes', 'system', 'worldclock', 'photos', 'events', 'audiodeck', 'signal', 'cava', 'visualizer', 'stocks', 'cpugraph', 'batteryhistory', 'countdown', 'timer', 'spacenote', 'network', 'clipboard'], // fresh-install defaults
+  onboarded: false,      // first-run welcome already shown
   showWidgets: true,
   uiScale: 'auto',       // 'auto' or a zoom factor
   dockSize: 46,
   magnify: true,
   iconSize: 56,
+  dockPos: 'bottom',   // bottom | left | right
   iconPos: {},           // desktop item path → [column from the right, row]
   hideTaskbar: true,
   glass: true,           // glass behind the menu bar, Dock and widgets
   glassStyle: 'liquid',  // liquid (clear, refractive) | frosted (heavy blur)
   refraction: 60,        // 0–100: how strongly liquid glass bends what's behind it
   glassTint: 0.45,       // how much colour sits on top of the glass (0 = clear, 1 = solid)
-  accent: 'blue',
+  accent: 'orange',
   clock24: false,
   clockSeconds: false,
   clockDate: true,
@@ -180,10 +199,23 @@ const DEFAULTS = {
   iconStyle: 'default',  // default | dark | clear
   widgetStyle: 'glass',  // glass | solid | tinted
   widgetTint: '#7b1c26',
+  desktopClockFace: 'analog', // analog | digital | dots
+  desktopClock24: false,
+  desktopClockSeconds: false,
+  desktopClockDate: true,
+  desktopClockAlign: 'center',
+  desktopClockSize: 48,
+  desktopClockColor: 'accent',
+  desktopClockTracking: 0.08,
+  widgetDesign: 'classic', // classic | dot | mono | soft
+  widgetDesignColor: 'accent',
   island: true,          // "now playing" pill at the top of the screen
+  islandPos: { x: 44, y: 3 },
+  islandLock: false,     // stop the pill being dragged
   showLanguage: true,    // keyboard language in the menu bar
   myWallpapers: [],      // urls of images the user added
   gestures: true,        // trackpad swipes
+  gestureSearchTap: false,
   gestureFingers: 3,
   appSwitcher: true,     // Haven's Alt+Tab switcher
   windowsKeys: true,     // Haven answers the Windows key, Win+Tab, Win+A, Win+N, Print Screen…
@@ -194,6 +226,7 @@ const DEFAULTS = {
   dnd: false,            // Do Not Disturb: no toasts, bounces or sounds
   useStacks: false,      // group desktop files by kind
   dynamicWallpaper: false,
+  liveWallpaper: null, // { url, kind: 'video' }
   notes: '',
   worldClocks: [['New York', 'America/New_York'], ['London', 'Europe/London'], ['Tokyo', 'Asia/Tokyo']],
   lpOrder: null,         // Launchpad layout: app ids and folders
@@ -202,15 +235,36 @@ const DEFAULTS = {
   labels: {},            // custom names for the Dock's system items
   hiddenDesktop: [],     // desktop items hidden from the desktop
   customCss: '',
-  screenshotSave: 'pictures', // pictures (Pictures\Screenshots) | clipboard | a folder path
-  widgetScale: {},       // widget sizes: id → scale (1 = normal); floating widgets only
+  screenshotSave: 'pictures', // legacy, no longer used (screenshots use the Windows Snipping Tool)
+  widgetScale: {},       // legacy: old scale multipliers, migrated to pixel sizes on load
+  widgetSize: {},        // floating widget sizes: id → [width px, height px (0 = auto)]
   widgetPos: {},         // widgets placed freely on the desktop: id → [x, y] as fractions of the screen
+  widgetOpacity: {},     // per floating widget: id → 0.3–1
+  widgetLock: {},        // per floating widget: id → true (can't be dragged)
+  widgetOpts: {},        // per widget options: id → { key: value }
   widgetOrder: null,     // order of widgets in the panel
+  customWidgets: [],     // user-created widgets: { id, title, type: 'text'|'url'|'color', content }
+  audioDeckView: 'spectrum',
+  audioDeckStyle: 'signal',
+  audioDeckVizStyle: 'bars',
+  audioDeckMetadata: true,
+  controlCenterDensity: 'balanced',
+  controlCenterShape: 'soft',
+  controlCenterAccent: null,
+  controlCenterGlow: false,
+  controlCenterScale: 1,
   trayIcons: true,       // system tray icons in the menu bar
+  barSplit: false,       // split the menu bar into floating islands, like separate pills
+  barClockFace: 'text',  // menu-bar clock: text | dots | analog | binary
   appMenus: true,        // show the front app's own menus when it has standard ones
+  calmMaximized: true,   // pause the desktop when an app covers it (Calm by design)
+  calmBattery: false,    // pause everything while running on battery
+  islandChips: {},       // pill extras: { battery: true, focus: true }
+  playerStyle: 'bar',    // now playing: bar (pinned) | pill | card | mini
   saverMinutes: 10,      // screen saver after this many idle minutes (0 = never)
   saverLock: false,      // ask for the password after the screen saver
   stageManager: false,
+  profiles: [],          // named, portable desktop looks
 };
 
 const ACCENTS = {
@@ -264,6 +318,8 @@ const WAVE_PALETTES = {
   dune:     { label: 'Dune',     bg: ['#dccfb8', '#8796a6'], waves: [['#efe4d0', '#bba98a'], ['#6c7e92', '#37465a']] },
   graphite: { label: 'Graphite', bg: ['#0f1013', '#24262b'], waves: [['#3a3d44', '#141518'], ['#5c6068', '#1b1c20']] },
   midnight: { label: 'Midnight', bg: ['#050a19', '#13244c'], waves: [['#1d3a72', '#09132e'], ['#3f6db5', '#0e1c3f']] },
+  aurora:   { label: 'Aurora',   bg: ['#020b1c', '#04263b'], waves: [['#0d6b87', '#05263a'], ['#16a3b8', '#074f63'], ['#7c4dff', '#150b35']] },
+  matrix:   { label: 'Dot Matrix', bg: ['#050505', '#141414'], waves: [] },
   orchid:   { label: 'Orchid',   bg: ['#24123a', '#7a4fb0'], waves: [['#a47bd8', '#4a2a77'], ['#e3a6ea', '#7c3fa1']] },
   lagoon:   { label: 'Lagoon',   bg: ['#05343f', '#0f7891'], waves: [['#36bad2', '#0a5466'], ['#8fe5f1', '#148fa7']] },
   amber:    { label: 'Amber',    bg: ['#341705', '#c3641a'], waves: [['#f0a14b', '#98440f'], ['#ffd18c', '#cf7920']] },
@@ -280,6 +336,21 @@ function waveWallpaper(id) {
   if (!p) return null;
   if (waveCache.has(id)) return waveCache.get(id);
   const W = 1920, H = 1080;
+  if (id === 'matrix') {
+    // A near-black dot grid, like the matrixed-dot styling used on Nothing-style panels.
+    const dot = 3.4, gap = 26;
+    let dots = '';
+    for (let y = gap / 2; y < H; y += gap) for (let x = gap / 2; x < W; x += gap)
+      dots += `<circle cx="${x}" cy="${y}" r="${dot}" fill="#ffffff" fill-opacity="${(0.05 + ((x + y) % 156 === 0 ? 0.09 : 0)).toFixed(3)}"/>`;
+    const svgText = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice">`
+      + '<radialGradient id="bg" cx="50%" cy="42%" r="75%"><stop offset="0" stop-color="#141414"/><stop offset="1" stop-color="#050505"/></radialGradient>'
+      + `<rect width="${W}" height="${H}" fill="url(#bg)"/>${dots}`
+      + '<circle cx="1518" cy="918" r="7" fill="#e5483a"/>'
+      + '</svg>';
+    const css = `url("data:image/svg+xml,${encodeURIComponent(svgText)}") center / cover no-repeat`;
+    waveCache.set(id, css);
+    return css;
+  }
   let defs = `<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${p.bg[0]}"/><stop offset="1" stop-color="${p.bg[1]}"/></linearGradient>` +
     '<filter id="soft"><feGaussianBlur stdDeviation="6"/></filter>';
   let body = '<rect width="1920" height="1080" fill="url(#bg)"/>';
@@ -304,6 +375,7 @@ function waveWallpaper(id) {
 const WIDGETS = {
   batteries: 'Batteries', clock: 'Clock', calendar: 'Calendar', weather: 'Weather', reminders: 'Reminders', media: 'Now Playing',
   notes: 'Notes', system: 'System', worldclock: 'World Clock', photos: 'Photos', events: 'Up Next',
+  network: 'Network', clipboard: 'Clipboard',
 };
 const DEFAULT_DOCK = ['File Explorer', 'Microsoft Edge', 'Google Chrome', 'Firefox', 'Zen Browser', 'Steam', 'Spotify',
   'Visual Studio Code', 'Discord', 'Photos', 'Calculator'];
@@ -313,10 +385,17 @@ const ICON_SIZES = [[44, 'Small'], [56, 'Medium'], [72, 'Large']];
 let S = { ...DEFAULTS };
 let env = {};
 let account = {};
+/* Set once in boot(): whether the host had a settings file for us at this start.
+   Boot-time seeds (default dock, one-off migrations) are derived state; saving them
+   must never happen on a start where the file was missing or unreadable, or a broken
+   start would overwrite everything with a fresh default state.json. */
+let hadSavedState = false;
+
 let apps = [];
 let games = [];
 let windows = [];
 let foreground = 0;
+let fullscreenAppActive = false;
 const appById = new Map();
 let saveTimer;
 
@@ -353,9 +432,12 @@ function flushState() {
 
 /** Another page saved some settings: take just those. */
 function onStatePatch({ set = {}, del = [] }) {
-  for (const [k, v] of Object.entries(set)) { S[k] = v; synced[k] = JSON.stringify(v); }
-  for (const k of del) { delete S[k]; delete synced[k]; }
-  onRemoteState({ ...S });
+  // Build the new state on a copy: onRemoteState compares old and new values to decide what to
+  // redraw (wallpaper, weather…), so S itself must still hold the old ones when it runs.
+  const next = { ...S };
+  for (const [k, v] of Object.entries(set)) { next[k] = v; synced[k] = JSON.stringify(v); }
+  for (const k of del) { delete next[k]; delete synced[k]; }
+  onRemoteState(next);
 }
 
 // Save anything still waiting when the page goes away.
@@ -366,13 +448,17 @@ function onRemoteState(next) {
   const prev = S;
   S = { ...DEFAULTS, ...next };
   applyTheme();
+  applyDeep?.();
   applyCustomization();
-  if (JSON.stringify(prev.wallpaper) !== JSON.stringify(S.wallpaper)) applyWallpaper();
+  if (JSON.stringify(prev.wallpaper) !== JSON.stringify(S.wallpaper) || JSON.stringify(prev.liveWallpaper) !== JSON.stringify(S.liveWallpaper)) applyWallpaper();
   applyScale();
   renderAccount();
   renderReminders();
   if (IS_DESKTOP) {
+    applyTheme();
     applyWidgetVisibility();
+    if (['widgetPos', 'widgetScale', 'widgetSize', 'widgetOrder', 'widgetOpacity', 'widgetLock'].some(k => JSON.stringify(prev[k]) !== JSON.stringify(S[k]))) placeWidgets();
+    if (JSON.stringify(prev.widgetOpts) !== JSON.stringify(S.widgetOpts)) { tickClock(); if (typeof renderSignal === 'function') renderSignal(); if (typeof renderCava === 'function') renderCava(); if (typeof syncVizWidget === 'function') syncVizWidget(); }
     renderDesktopIcons();
     if (JSON.stringify(prev.city) !== JSON.stringify(S.city) || prev.units !== S.units) refreshWeather();
   }
@@ -393,9 +479,19 @@ function applyTheme() {
   root.dataset.theme = t.mode;
   const style = root.style;
   style.setProperty('--shell-rgb', t.surface);
-  style.setProperty('--widget', `rgb(${t.surface} / ${(0.52 * (t.alpha ?? 1)).toFixed(2)})`);
+  // Frosted glass: the Tint slider actually controls how much surface colour sits on the widgets.
+  // Liquid: the Tint slider drives see-through directly (low = wallpaper shows through,
+  // high = milky), so Refraction stays visible at every level. Frosted keeps its milky floor.
+  const widgetAlpha = !S.glass ? .93
+    : S.glassStyle === 'frosted' ? Math.min(.95, .18 + S.glassTint * .75 * (t.alpha ?? 1))
+    : Math.max(.07, Math.min(.9, S.glassTint * (t.alpha ?? 1) * .8));
+  style.setProperty('--widget', `rgb(${t.surface} / ${widgetAlpha.toFixed(2)})`);
   style.setProperty('--surface', `rgb(${t.surface} / .92)`);
   style.setProperty('--shell-alpha', S.glass ? String((S.glassTint * (t.alpha ?? 1)).toFixed(3)) : '1');
+  // The menu bar's own tint: see-through themes (Glass, Transparent) stay light, solid themes
+  // clearly show their colour, so the bar matches the Dock and panels.
+  const barAlpha = !S.glass ? 1 : t.alpha ? Math.max(0.28, S.glassTint * t.alpha) : Math.max(0.6, S.glassTint);
+  style.setProperty('--bar-alpha', barAlpha.toFixed(3));
 
   const accent = accentHex();
   style.setProperty('--accent', accent);
@@ -405,6 +501,9 @@ function applyTheme() {
   root.classList.toggle('liquid', S.glass && S.glassStyle === 'liquid');
   for (const s of ['default', 'dark', 'clear']) root.classList.toggle('icons-' + s, S.iconStyle === s);
   for (const s of ['glass', 'solid', 'tinted']) root.classList.toggle('widgets-' + s, S.widgetStyle === s);
+  root.dataset.widgetDesign = ['classic', 'dot', 'mono', 'soft'].includes(S.widgetDesign) ? S.widgetDesign : 'classic';
+  root.dataset.widgetDesignColor = ['accent', 'white', 'text', 'custom'].includes(S.widgetDesignColor) ? S.widgetDesignColor : 'accent';
+  root.style.setProperty('--widget-design-color', S.widgetDesignColor === 'custom' ? (S.widgetDesignCustomColor || '#ef4444') : S.widgetDesignColor === 'white' ? '#fff' : S.widgetDesignColor === 'text' ? 'var(--text)' : 'var(--accent)');
   style.setProperty('--widget-tint', hexToRgb(S.widgetTint).join(' '));
   refreshLiquid();
   if (IS_SHELL) {
@@ -418,17 +517,36 @@ let windowsWallpaperUrl;
 
 async function applyWallpaper() {
   let css;
+  const fit = ['cover', 'contain', 'stretch', 'center'].includes(S.wallpaperFit) ? S.wallpaperFit : 'cover';
+  const position = `${Math.max(0, Math.min(100, Number(S.wallpaperX) || 0))}% ${Math.max(0, Math.min(100, Number(S.wallpaperY) || 0))}%`;
+  document.documentElement.style.setProperty('--wallpaper-position', position);
+  const imageBackground = url => {
+    const size = fit === 'stretch' ? '100% 100%' : fit === 'center' ? 'auto' : fit;
+    return `url("${url}") ${position} / ${size} no-repeat`;
+  };
   if (S.wallpaper === 'windows') {
     if (windowsWallpaperUrl === undefined) {
       try { windowsWallpaperUrl = await call('windowsWallpaper'); } catch { windowsWallpaperUrl = null; }
     }
-    css = windowsWallpaperUrl ? `url("${windowsWallpaperUrl}") center / cover no-repeat` : waveWallpaper("graphite");
+    css = windowsWallpaperUrl ? imageBackground(windowsWallpaperUrl) : waveWallpaper("graphite");
   } else if (S.wallpaper && typeof S.wallpaper === 'object') {
-    css = `url("${S.wallpaper.url}") center / cover no-repeat`;
+    css = imageBackground(S.wallpaper.url);
   } else {
     css = waveWallpaper(S.wallpaper) || waveWallpaper("graphite");
   }
+  if (S.liveWallpaper?.url) css = css.replace(/\s+no-repeat$/, ', none');
   document.documentElement.style.setProperty('--wp', css);
+  renderLiveWallpaper();
+}
+
+function renderLiveWallpaper() {
+  const wall = $('#wallpaper');
+  if (!wall) return;
+  const live = S.liveWallpaper;
+  let video = wall.querySelector('video.live-wallpaper');
+  if (!live?.url || live.kind !== 'video') { video?.remove(); return; }
+  if (!video) { video = h('video', { class: 'live-wallpaper', autoplay: true, muted: true, loop: true, playsinline: true }); wall.append(video); }
+  if (video.src !== live.url) { video.src = live.url; video.play().catch(() => {}); }
 }
 
 /** Picks a comfortable size for the screen: smaller on compact laptops, larger on big monitors. */
@@ -454,6 +572,24 @@ function applyScale() {
   }
   if (PART === 'shell') requestAnimationFrame(updateDockVisibility);
 }
+
+/* ---------- Display-scale robustness ----------
+   Changing Windows display scale (or moving between monitors with different DPI) shifts
+   devicePixelRatio while the DOM resize settles asynchronously. React the instant the
+   effective scale moves: regions, reserved edges, zoom and widget placement are all
+   recomputed with the new dpr instead of going stale until the next display event. */
+function onScaleChanged() {
+  applyScale();
+  updateRegion();      // shell-only inside
+  updateReserve();
+  updateGlass();
+  if (IS_DESKTOP) { placeWidgets(); renderDesktopIcons(); refreshLiquid(); }
+}
+function watchDpr() {
+  const mq = matchMedia(`(resolution: ${devicePixelRatio}dppx)`);
+  mq.addEventListener('change', () => { onScaleChanged(); watchDpr(); }, { once: true });
+}
+watchDpr();
 
 /* ---------- Liquid glass ----------
    Each widget gets its own SVG filter: a displacement map that is neutral in the middle and
@@ -579,13 +715,93 @@ function initSheen() {
 
 function tickMenubar() {
   const now = new Date();
+  const el = $('#menubar-clock');
+  const face = ['text', 'dots', 'analog', 'binary'].includes(S.barClockFace) ? S.barClockFace : 'text';
+  if (el.dataset.face !== face) { el.dataset.face = face; el.replaceChildren(); delete el._hands; delete el._binary; }
+  if (face === 'analog') return renderBarAnalog(el, now);
+  if (face === 'binary') return renderBarBinary(el, now);
   const time = now.toLocaleTimeString(undefined, {
     hour: 'numeric', minute: '2-digit', second: S.clockSeconds ? '2-digit' : undefined, hour12: !S.clock24,
   });
-  const date = S.clockDate ? now.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + '  ' : '';
+  const date = S.clockDate && face === 'text' ? now.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + '  ' : '';
   const text = date + time;
-  const el = $('#menubar-clock');
   if (el.textContent !== text) el.textContent = text;
+}
+
+/** A tiny analogue clock living in the menu bar. */
+function renderBarAnalog(el, now) {
+  if (!el._hands) {
+    const face = s('svg', { viewBox: '0 0 100 100', class: 'bar-analog' });
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      face.append(s('line', {
+        class: 'tick' + (i % 3 === 0 ? ' major' : ''),
+        x1: 50 + 40 * Math.sin(a), y1: 50 - 40 * Math.cos(a),
+        x2: 50 + 46 * Math.sin(a), y2: 50 - 46 * Math.cos(a),
+      }));
+    }
+    const hands = {
+      hour: s('line', { class: 'hand', x1: 50, y1: 50, x2: 50, y2: 28 }),
+      minute: s('line', { class: 'hand minute', x1: 50, y1: 50, x2: 50, y2: 14 }),
+    };
+    face.append(hands.hour, hands.minute, s('circle', { class: 'pin', cx: 50, cy: 50, r: 4 }));
+    el.replaceChildren(face);
+    el._hands = hands;
+  }
+  const sec = now.getSeconds(), min = now.getMinutes() + sec / 60, hr = (now.getHours() % 12) + min / 60;
+  el._hands.hour.setAttribute('transform', `rotate(${hr * 30} 50 50)`);
+  el._hands.minute.setAttribute('transform', `rotate(${min * 6} 50 50)`);
+}
+
+/** A classic binary clock: each decimal digit of the time as a 4-bit column, lit dots bottom-up. */
+function renderBarBinary(el, now) {
+  const digits = [
+    Math.floor(now.getHours() / 10), now.getHours() % 10,
+    Math.floor(now.getMinutes() / 10), now.getMinutes() % 10,
+    ...(S.clockSeconds ? [Math.floor(now.getSeconds() / 10), now.getSeconds() % 10] : []),
+  ];
+  if (!el._binary || el._binary.length !== digits.length) {
+    el.replaceChildren(...digits.map(() => h('span', { class: 'col' }, ...[8, 4, 2, 1].map(() => h('i')))));
+    el._binary = [...el.querySelectorAll('.col')];
+  }
+  el._binary.forEach((col, c) => {
+    const bits = digits[c].toString(2).padStart(4, '0');
+    [...col.children].forEach((dot, b) => dot.classList.toggle('on', bits[b] === '1'));
+  });
+}
+
+/** Splits the menu bar into floating islands (left: menus, right: status), or joins it back. */
+function applyBarLayout() {
+  if (!IS_SHELL) return;
+  const bar = $('.menubar');
+  bar.classList.toggle('split', !!S.barSplit);
+  const left = bar.querySelector(':scope > .bar-left'), right = bar.querySelector(':scope > .bar-right');
+  if (S.barSplit && !left) {
+    const spacer = bar.querySelector(':scope > .spacer'); // marks where the right island starts
+    const groups = { left: h('div', { class: 'bar-group bar-left' }), right: h('div', { class: 'bar-group bar-right' }) };
+    let side = groups.left;
+    for (const k of [...bar.children]) {
+      if (k === spacer) { side = groups.right; continue; }
+      side.append(k); // moving them keeps every listener and id intact
+    }
+    spacer?.remove(); // a fresh one is added when the bar is joined back
+    bar.append(groups.left, groups.right);
+  } else if (!S.barSplit && left && right) {
+    const frag = document.createDocumentFragment();
+    for (const el of [...left.children]) frag.append(el);
+    frag.append(h('div', { class: 'spacer' }));
+    for (const el of [...right.children]) frag.append(el);
+    bar.prepend(frag);
+    left.remove();
+    right.remove();
+  }
+}
+
+/** The menu-bar surfaces input and glass should follow: the two islands when split, else the whole bar. */
+function barRects() {
+  const bar = $('.menubar');
+  const els = bar.classList.contains('split') ? [...bar.querySelectorAll(':scope > .bar-group')] : [bar];
+  return els.map(g => g.getBoundingClientRect()).filter(r => r.width > 0);
 }
 
 function displayName() {
@@ -652,9 +868,142 @@ function tickClock() {
   const sec = now.getSeconds();
   const min = now.getMinutes() + sec / 60;
   const hr = (now.getHours() % 12) + min / 60;
-  hands.hour.setAttribute('transform', `rotate(${hr * 30} 100 100)`);
-  hands.minute.setAttribute('transform', `rotate(${min * 6} 100 100)`);
-  hands.second.setAttribute('transform', `rotate(${sec * 6} 100 100)`);
+  // The analogue hands only exist on the desktop layer; settings pages call this from the shell too.
+  if (hands) {
+    hands.hour.setAttribute('transform', `rotate(${hr * 30} 100 100)`);
+    hands.minute.setAttribute('transform', `rotate(${min * 6} 100 100)`);
+    hands.second.setAttribute('transform', `rotate(${sec * 6} 100 100)`);
+  }
+  const time = $('#clock-digital-time');
+  const date = $('#clock-digital-date');
+  if (time) {
+    const clockOpts = S.widgetOpts?.clock || {};
+    const face = CLOCK_FACES.includes(clockOpts.face || S.desktopClockFace) ? (clockOpts.face || S.desktopClockFace) : 'analog';
+    const options = { hour: '2-digit', minute: '2-digit', hour12: !(clockOpts['24h'] ?? S.desktopClock24) };
+    if (clockOpts.seconds ?? S.desktopClockSeconds) options.second = '2-digit';
+    time.textContent = new Intl.DateTimeFormat(undefined, options).format(now);
+    date.textContent = S.desktopClockDate ? new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'short', day: 'numeric' }).format(now) : '';
+    const clock = $('[data-widget="clock"]');
+    if (clock) fitClockText(time, clock);
+    clock.dataset.face = face;
+    clock.dataset.align = ['left', 'center', 'right'].includes(S.desktopClockAlign) ? S.desktopClockAlign : 'center';
+    clock.dataset.design = ['classic', 'dot', 'mono', 'soft'].includes(S.widgetDesign) ? S.widgetDesign : 'classic';
+    clock.style.setProperty('--clock-size', `${Math.max(24, Math.min(90, Number(S.desktopClockSize) || 48))}px`);
+    clock.style.setProperty('--clock-tracking', `${Math.max(0, Math.min(.2, Number(S.desktopClockTracking) || 0))}em`);
+    clock.style.setProperty('--clock-color', S.desktopClockColor === 'white' ? '#fff' : S.desktopClockColor === 'text' ? 'var(--text)' : 'var(--accent)');
+    clock.style.setProperty('--widget-design-color', S.widgetDesignColor === 'custom' ? (S.widgetDesignCustomColor || '#ef4444') : S.widgetDesignColor === 'white' ? '#fff' : S.widgetDesignColor === 'text' ? 'var(--text)' : 'var(--accent)');
+    if (face === 'flip') return renderClockFlip(clock, now, clockOpts);
+    if (face === 'city') return renderClockCity(clock, now, clockOpts);
+    if (face === 'grid') return renderClockGrid(clock, now);
+    $('#clock-extra')?.remove();
+  }
+}
+
+/* ---------- Extra clock widget faces: flip, city, world grid ---------- */
+
+const CLOCK_FACES = ['analog', 'digital', 'dots', 'flip', 'city', 'grid'];
+
+/** Shrinks the clock digits until they fit the widget, whatever the time string's length. */
+function fitClockText(el, clock) {
+  el.style.fontSize = '';
+  const maxW = clock.clientWidth - 24;
+  if (maxW <= 0 || el.scrollWidth <= maxW) return;
+  const size = parseFloat(getComputedStyle(el).fontSize);
+  if (size > 0) el.style.fontSize = Math.max(13, size * maxW / el.scrollWidth) + 'px';
+}
+
+/** A small analogue face, shared by the city clock and the world-clock grid. */
+function buildMiniAnalog(cls = 'mini-analog') {
+  const face = s('svg', { viewBox: '0 0 100 100', class: cls });
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    face.append(s('line', {
+      class: 'tick' + (i % 3 === 0 ? ' major' : ''),
+      x1: 50 + 40 * Math.sin(a), y1: 50 - 40 * Math.cos(a),
+      x2: 50 + 46 * Math.sin(a), y2: 50 - 46 * Math.cos(a),
+    }));
+  }
+  const hands = {
+    hour: s('line', { class: 'hand', x1: 50, y1: 50, x2: 50, y2: 28 }),
+    minute: s('line', { class: 'hand minute', x1: 50, y1: 50, x2: 50, y2: 14 }),
+  };
+  face.append(hands.hour, hands.minute, s('circle', { class: 'pin', cx: 50, cy: 50, r: 4 }));
+  return { face, hands };
+}
+function setMiniHands(hands, h, m) {
+  hands.hour.setAttribute('transform', `rotate(${h * 30} 50 50)`);
+  hands.minute.setAttribute('transform', `rotate(${m * 6} 50 50)`);
+}
+
+/** Wall-clock time in a time zone, plus a short UTC offset label. */
+function tzParts(tz, now) {
+  try {
+    const there = new Date(now.toLocaleString('en-US', { timeZone: tz }));
+    const hrs = Math.round((there - now) / 18e5) / 2; // half-hour steps
+    return { h: there.getHours(), m: there.getMinutes(), offset: hrs === 0 ? '' : (hrs > 0 ? '+' : '−') + Math.abs(hrs) };
+  } catch { return { h: now.getHours(), m: now.getMinutes(), offset: '' }; }
+}
+
+/** Extra-face container inside the clock widget (the static faces live in the markup). */
+function clockExtra(clock, kind, cls) {
+  let el = $('#clock-extra');
+  if (el && el.dataset.kind !== kind) { el.remove(); el = null; } // switching faces: start fresh
+  if (!el) {
+    el = h('div', { id: 'clock-extra', class: 'clock-extra ' + cls });
+    el.dataset.kind = kind;
+    clock.append(el);
+  }
+  return el;
+}
+
+/** Big flip-style digital face on a translucent plate — a glass-friendly version of the classic. */
+function renderClockFlip(clock, now, opts = {}) {
+  const el = clockExtra(clock, 'flip', 'clock-flip');
+  if (!el.children.length) {
+    el.append(h('b', { class: 'flip-time' }), h('span', { class: 'flip-sub' }));
+  }
+  const options = { hour: '2-digit', minute: '2-digit', hour12: !(opts['24h'] ?? S.desktopClock24) };
+  if (opts.seconds ?? S.desktopClockSeconds) options.second = '2-digit';
+  el.querySelector('.flip-time').textContent = new Intl.DateTimeFormat(undefined, options).format(now);
+  el.querySelector('.flip-sub').textContent = S.desktopClockDate === false ? '' : now.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  fitClockText(el.querySelector('.flip-time'), clock);
+}
+
+/** One analogue clock for a city, with its name and UTC offset underneath. */
+function renderClockCity(clock, now, opts = {}) {
+  const [name, tz] = (S.worldClocks || [])[Math.min(opts.cityIndex ?? 0, (S.worldClocks || []).length - 1)] || ['Local', undefined];
+  const el = clockExtra(clock, 'city', 'clock-extra clock-city');
+  if (!el.children.length) {
+    const { face, hands } = buildMiniAnalog();
+    el.append(face, h('b', { class: 'city-name' }), h('span', { class: 'city-offset' }));
+    el._hands = hands;
+  }
+  const { h: hh, m, offset } = tzParts(tz, now);
+  setMiniHands(el._hands, hh + m / 60, m);
+  el.querySelector('.city-name').textContent = name;
+  el.querySelector('.city-offset').textContent = offset;
+}
+
+/** Four small world clocks, straight out of the macOS widget set. */
+function renderClockGrid(clock, now) {
+  const cities = (S.worldClocks || []).slice(0, 4);
+  while (cities.length < 4) cities.push(['Home', undefined]);
+  const el = clockExtra(clock, 'grid', 'clock-extra clock-grid');
+  if (!el._cells || el._names !== cities.map(c => c[0]).join()) {
+    el.replaceChildren(...cities.map(() => h('div', { class: 'cell' })));
+    el._cells = [...el.children].map(cell => {
+      const { face, hands } = buildMiniAnalog();
+      cell.append(face, h('b'), h('span'));
+      return { hands, b: cell.querySelector('b'), span: cell.querySelector('span') };
+    });
+    el._names = cities.map(c => c[0]).join();
+  }
+  cities.forEach(([name, tz], i) => {
+    const { h: hh, m, offset } = tzParts(tz, now);
+    setMiniHands(el._cells[i].hands, hh + m / 60, m);
+    el._cells[i].b.textContent = name;
+    el._cells[i].span.textContent = offset;
+  });
 }
 
 /* ---------- Calendar ---------- */
@@ -698,6 +1047,7 @@ let deviceBatteries = [];
 async function refreshBatteries(spin = false) {
   if (spin) spinButton($('#batteries-refresh'));
   try { deviceBatteries = await call('batteries') || []; } catch { deviceBatteries = []; }
+  if (typeof setBatteryCalm === 'function') setBatteryCalm(!!pcBattery && !pcBattery.charging);
   renderBatteries();
 }
 
@@ -740,6 +1090,7 @@ async function initPcBattery() {
       // Desktops report a permanently full, charging battery; treat that as no battery.
       const present = !(battery.charging && battery.level === 1 && battery.chargingTime === 0);
       pcBattery = present ? { level: Math.round(battery.level * 100), charging: battery.charging } : null;
+      if (typeof setBatteryCalm === 'function') setBatteryCalm(!!pcBattery && !pcBattery.charging);
       if (IS_SHELL) renderMenubarBattery();
       renderBatteries();
     };
@@ -825,7 +1176,7 @@ async function loadApps(refresh = false) {
   if (!Array.isArray(S.dock)) {
     const byName = new Map(apps.map(a => [a.name.toLowerCase(), a]));
     S.dock = DEFAULT_DOCK.map(n => byName.get(n.toLowerCase())).filter(Boolean).slice(0, 9).map(a => a.id);
-    save();
+    if (hadSavedState) save(); // don't persist a fresh default over an unreadable state.json
   }
   renderDock(true);
   renderActiveApp();
@@ -926,13 +1277,15 @@ function groupWindows() {
 /** Clicking a running app: bring it forward, or minimize it if it's already in front (like the taskbar). */
 function activateGroup(group, sourceEl, app) {
   if (!group) return launchApp(app, sourceEl);
-  const front = group.wins.find(w => w.hwnd === foreground);
-  if (front) call('minimize', { hwnd: front.hwnd });
-  else focusWindow(group.wins[0]);
+  // Native picks the app's best (topmost visible, non-ghost) window: focus it, or minimize
+  // it when it's genuinely already in front. A ghost foreground window is never minimized.
+  call('activateApp', { hwnd: group.wins[0].hwnd }).catch(() => {});
 }
 
 function renderDock(force = false) {
   if (!IS_SHELL) return;
+  const dockWrap = $('#dock-wrap');
+  if (dockWrap) dockWrap.dataset.dockPos = S.dockPos || 'bottom';
   const groups = groupWindows();
   const pinned = (S.dock || []).map(id => appById.get(id)).filter(Boolean);
   const pinnedIds = new Set(pinned.map(a => a.id));
@@ -1039,9 +1392,12 @@ function initDock() {
   dock.addEventListener('mousemove', e => {
     if (!S.magnify) return;
     requestAnimationFrame(updateGlass); // the Dock widens as icons grow; keep the glass under it
+    const vertical = (S.dockPos || 'bottom') !== 'bottom';
     for (const item of dock.querySelectorAll('.dock-item')) {
       const r = item.getBoundingClientRect();
-      const d = Math.abs(e.clientX - (r.left + r.width / 2));
+      const d = vertical
+        ? Math.abs(e.clientY - (r.top + r.height / 2))
+        : Math.abs(e.clientX - (r.left + r.width / 2));
       item.style.setProperty('--s', (1 + 0.4 * Math.max(0, 1 - d / (S.dockSize * 2.8))).toFixed(3));
     }
   });
@@ -1065,12 +1421,18 @@ let regionKey = '';
 let regionRaf = 0;
 let shellInteractive = false;
 
-const FULLSCREEN_OVERLAYS = ['#launchpad', '#spotlight', '#modal', '#quicklook', '#control-center', '#switcher', '#stack-pop', '#lock', '#nc', '#saver'];
-const KEYBOARD_OVERLAYS = ['#launchpad', '#spotlight', '#modal', '#quicklook', '#lock', '#saver'];
+const FULLSCREEN_OVERLAYS = ['#launchpad', '#spotlight', '#modal', '#quicklook', '#control-center', '#switcher', '#stack-pop', '#lock', '#nc', '#saver', '#media-panel', '#onboard'];
+const KEYBOARD_OVERLAYS = ['#launchpad', '#spotlight', '#modal', '#quicklook', '#lock', '#saver', '#onboard'];
 
 /** Overlays that take the whole screen (so clicking outside closes them). */
 function anyOverlayOpen() {
-  return FULLSCREEN_OVERLAYS.some(sel => { const el = $(sel); return el && !el.hidden; });
+  // The switcher strip lingers visually after a commit; once its state (sw) is gone it no
+  // longer counts as open, so the click region returns to normal immediately.
+  return FULLSCREEN_OVERLAYS.some(sel => {
+    if (sel === '#switcher' && (typeof sw === 'undefined' || !sw)) return false;
+    const el = $(sel);
+    return el && !el.hidden;
+  });
 }
 
 /** Overlays you type into; the switcher and Control Center never steal focus from your app. */
@@ -1089,16 +1451,36 @@ function updateRegion() {
   regionRaf = requestAnimationFrame(() => {
     const dpr = devicePixelRatio;
     let payload;
-    if (anyOverlayOpen() || !$('#context-menu').hidden) {
+    const swOpen = typeof sw !== 'undefined' && !!sw;
+    // The switcher is keyboard-driven and its backdrop is pure dim, so it gets a
+    // strip-sized region instead of the whole screen: a fullscreen region flip on every
+    // Alt+Tab makes DWM recomposite the entire transparent surface (visible tearing for
+    // seconds), and a full region would eat all mouse input outside the strip while Alt
+    // is held. Every other overlay really does need the whole screen.
+    const fullOverlay = FULLSCREEN_OVERLAYS.some(sel => {
+      if (sel === '#switcher') return false;
+      const el = $(sel);
+      return el && !el.hidden;
+    }) || !$('#context-menu').hidden;
+    if (fullOverlay) {
       payload = { full: true };
     } else {
       const rects = [];
       const add = (l, t, r, b) => rects.push([l, t, r, b].map(v => Math.round(v * dpr)));
-      const bar = $('.menubar').getBoundingClientRect();
-      add(bar.left, bar.top, bar.right, bar.bottom);
+      if (swOpen) {
+        const s = $('#switcher-strip');
+        const r = (s || $('#switcher')).getBoundingClientRect();
+        if (r.width > 0) add(r.left - 24, r.top - 24, r.right + 24, r.bottom + 24);
+      }
+      for (const b of barRects()) add(b.left, b.top, b.right, b.bottom);
       if (!$('#island').hidden) { const i = $('#island').getBoundingClientRect(); add(i.left - 4, i.top, i.right + 4, i.bottom + 4); }
+      if (!$('#bar-player').hidden) { const i = $('#bar-player').getBoundingClientRect(); add(i.left - 4, i.top, i.right + 4, i.bottom + 4); }
       if (dockTucked) {
-        add(0, innerHeight - 3, innerWidth, innerHeight); // the reveal strip along the bottom edge
+        // The reveal strip along the edge the Dock hides into.
+        const pos = S.dockPos || 'bottom';
+        if (pos === 'left') add(0, 0, 3, innerHeight);
+        else if (pos === 'right') add(innerWidth - 3, 0, innerWidth, innerHeight);
+        else add(0, innerHeight - 3, innerWidth, innerHeight);
       } else {
         const d = $('#dock').getBoundingClientRect();
         // While hovered the icons grow and labels appear above them; give them room.
@@ -1107,7 +1489,6 @@ function updateRegion() {
         add(d.left - growX, d.top - growUp, d.right + growX, innerHeight);
       }
       if (!$('#toast').hidden) { const t = $('#toast').getBoundingClientRect(); add(t.left, t.top, t.right, t.bottom); }
-      if (!$('#shot-preview').hidden) { const p = $('#shot-preview').getBoundingClientRect(); add(p.left - 4, p.top - 4, p.right + 4, p.bottom + 4); }
       payload = { full: false, rects };
     }
     updateGlass();
@@ -1138,7 +1519,9 @@ let glassKey = '';
 let dockRectKey = '';
 
 function dockShouldHide() {
-  return S.dockAutohide === 'always' || (S.dockAutohide === 'smart' && dockOverlap);
+  // 'desktop': visible whenever the desktop is showing; only a true fullscreen app (video,
+  // game) tucks it. 'smart' additionally tucks when a window overlaps the Dock's band.
+  return fullscreenAppActive || S.dockAutohide === 'always' || (S.dockAutohide === 'smart' && dockOverlap);
 }
 
 function updateDockVisibility() {
@@ -1161,20 +1544,27 @@ function updateGlass() {
   const plates = [];
   const d = $('#dock').getBoundingClientRect();
   if (S.glass) {
-    const b = $('.menubar').getBoundingClientRect();
-    if (b.width) plates.push([b.left, b.top, b.width, b.height, 0]);
+    // Split-bar islands are rounded CSS segments — a square acrylic plate behind them would
+    // peek out at the corners as sharp edges, so they skip the native plates entirely.
+    if (!$('.menubar').classList.contains('split')) for (const b of barRects()) plates.push([b.left, b.top, b.width, b.height, 0]);
     // The Dock draws its own glass: a native blur pane can't follow its rounded corners
     // or keep up smoothly while it magnifies.
   }
   const px = plates.map(p => p.map(v => Math.round(v * dpr)));
-  const key = JSON.stringify(px);
+  // Tint the native blur with the theme colour too, so even the blur matches the theme.
+  const surface = (resolvedTheme().surface || '30 30 33').split(/\s+/).map(Number);
+  const tint = [...surface, Math.round(255 * (resolvedTheme().alpha ? 0.25 : 0.55))];
+  const key = JSON.stringify([px, tint]);
   if (key !== glassKey) {
     glassKey = key;
-    call('setGlass', { plates: px });
+    call('setGlass', { plates: px, tint });
   }
   // Where the Dock sits when shown, so the host can tell when a window overlaps it.
   if (!dockTucked) {
-    const rect = [d.left, d.top, d.right, innerHeight].map(v => Math.round(v * dpr));
+    const pos = S.dockPos || 'bottom';
+    const rect = (pos === 'left' ? [d.left, 0, d.right, innerHeight]
+      : pos === 'right' ? [d.left, 0, d.right, innerHeight]
+      : [d.left, d.top, d.right, innerHeight]).map(v => Math.round(v * dpr));
     const rk = JSON.stringify(rect);
     if (rk !== dockRectKey) { dockRectKey = rk; call('setDockRect', { rect }); }
   }
@@ -1196,13 +1586,18 @@ function updateReserve() {
   const top = Math.ceil($('.menubar').getBoundingClientRect().bottom * dpr);
   // A Dock that hides itself doesn't need windows to keep clear of it.
   const dockShown = !!$('#dock').offsetParent && !isPartHidden('dock');
-  const bottom = S.dockAutohide === 'off' && dockShown
-    ? Math.round((innerHeight - $('#dock').getBoundingClientRect().top + 8) * dpr)
-    : 0;
-  const key = top + ',' + bottom;
+  let bottom = 0, left = 0, right = 0;
+  if (S.dockAutohide === 'off' && dockShown) {
+    const d = $('#dock').getBoundingClientRect();
+    const pos = S.dockPos || 'bottom';
+    if (pos === 'left') left = Math.round((d.right + 8) * dpr);
+    else if (pos === 'right') right = Math.round((innerWidth - d.left + 8) * dpr);
+    else bottom = Math.round((innerHeight - d.top + 8) * dpr);
+  }
+  const key = [top, bottom, left, right].join(',');
   if (key === reserveKey) return;
   reserveKey = key;
-  call('reserve', { top, bottom });
+  call('reserve', { top, bottom, left, right });
 }
 
 /* ---------- Running windows ---------- */
@@ -1215,8 +1610,11 @@ async function pollWindowsNow() {
     const res = await call('windows');
     windows = res?.windows || [];
     foreground = res?.foreground || 0;
+    fullscreenAppActive = !!res?.fullscreen;
     clearAttentionForForeground();
     renderDock();
+    updateDockVisibility();
+    renderIsland();
     renderActiveApp();
   } catch { /* ignore */ }
 }
@@ -1226,9 +1624,12 @@ async function pollWindows() {
     const res = await call('windows');
     windows = res?.windows || [];
     foreground = res?.foreground || 0;
+    fullscreenAppActive = !!res?.fullscreen;
     clearAttentionForForeground();
     if ((res?.language || '') !== inputLanguage) { inputLanguage = res?.language || ''; renderLanguage(); }
     renderDock();
+    updateDockVisibility();
+    renderIsland();
     renderActiveApp();
   } catch { /* keep last known */ }
   setTimeout(pollWindows, 1000);
@@ -1269,7 +1670,7 @@ function openSpotlight(mode = 'search') {
   spotlightMode = typeof mode === 'string' ? mode : 'search';
   $('#spotlight').hidden = false;
   $('#spotlight').classList.toggle('clip-mode', spotlightMode === 'clipboard');
-  $('#spotlight-input').placeholder = spotlightMode === 'clipboard' ? 'Search clipboard history' : 'Search apps, files, settings, maths, or ask Claude';
+  $('#spotlight-input').placeholder = spotlightMode === 'clipboard' ? 'Search clipboard history' : 'Search apps, files, settings or maths';
   $('#spotlight-answer')?.replaceChildren();
   if ($('#spotlight-answer')) $('#spotlight-answer').hidden = true;
   if (spotlightMode === 'clipboard' || !clipItems.length) loadClipItems();
@@ -1384,7 +1785,7 @@ let media = null;
 let mediaAt = 0;
 
 async function pollMedia() {
-  await refreshMedia();
+  try { await refreshMedia(); } catch { /* a transient render error must never kill the loop */ }
   setTimeout(pollMedia, 2500);
 }
 
@@ -1412,6 +1813,7 @@ function renderMedia() {
   $('#media-app').textContent = m ? sourceName(m.app) : 'Now playing';
   $('#media-toggle').replaceChildren(svg(m?.playing ? ICONS.pause : ICONS.play));
   updateProgress();
+  if (typeof renderAudioDeck === 'function') renderAudioDeck();
 }
 
 function clockTime(sec) {
@@ -1421,22 +1823,111 @@ function clockTime(sec) {
 
 /* ---------- Now-playing pill (shell layer) ---------- */
 
+// Windows' media feed intermittently reports nothing between polls (track changes, app
+// hiccups); hold the last track briefly so the pill doesn't blink out of existence.
+let mediaHold = null, mediaLostAt = 0;
+const MEDIA_HOLD_MS = 15000;
+
 function renderIsland() {
   const el = $('#island');
-  const m = media;
-  const show = S.island && !!m;
-  if (el.hidden === show) { el.hidden = !show; updateRegion(); }
-  if (!show) return;
+  if (media) { mediaHold = media; mediaLostAt = 0; }
+  else if (mediaHold && !mediaLostAt) mediaLostAt = Date.now();
+  const m = media || (mediaHold && Date.now() - mediaLostAt < MEDIA_HOLD_MS ? { ...mediaHold, playing: false } : null);
+  const show = S.island && !!m && !fullscreenAppActive;
+  const style = playerStyle();
+  const inBar = style === 'bar' || style === 'mini';
+  // Pinned styles live inside the menu bar; the pill styles float over the desktop area.
+  const barHost = $('#bar-player');
+  if (barHost) barHost.hidden = !inBar;
+  el.hidden = inBar || !show;
+  if (!show) { updateRegion(); return; }
+  if (inBar) { renderBarPlayer(m, style); updateRegion(); return; }
+  el.dataset.style = style;
+  applyIslandPosition();
+  // Re-rendering under the cursor resets :hover every poll cycle (the expand/collapse flicker).
+  // Skip the rebuild entirely when nothing visible changed.
+  const sig = JSON.stringify([m.title, m.artist, m.playing, !!m.art, style, S.islandChips, S.dnd]);
+  if (el.dataset.sig === sig) return;
+  el.dataset.sig = sig;
   const art = $('#island-art');
   if (m.art) { art.style.backgroundImage = `url("${m.art}")`; art.replaceChildren(); }
   else { art.style.backgroundImage = ''; if (!art.firstChild) art.append(svg(ICONS.music)); }
   $('#island-title').textContent = m.artist ? `${m.title} · ${m.artist}` : m.title;
   el.classList.toggle('playing', !!m.playing);
   $('#island-toggle').replaceChildren(svg(m.playing ? ICONS.pause : ICONS.play));
+  // Calm chips: PC battery and the Focus (Do Not Disturb) switch.
+  el.querySelectorAll('.island-chips, .island-chip').forEach(c => c.remove());
+  const chips = h('span', { class: 'island-chips' });
+  if (islandChipOn('battery')) {
+    const b = pcBattery || (deviceBatteries || [])[0];
+    if (b) chips.append(h('span', { class: 'island-chip', title: b.charging ? 'Charging' : 'On battery' }, batteryChipIcon(b), h('b', { text: `${Math.round(b.level)}%` })));
+  }
+  if (islandChipOn('focus')) {
+    chips.append(h('button', { class: 'island-chip island-focus' + (S.dnd ? ' on' : ''), title: 'Focus (Do Not Disturb)', onclick: e => { e.stopPropagation(); S.dnd = !S.dnd; save(); renderIsland(); } }, h('b', { text: S.dnd ? 'Focus on' : 'Focus' })));
+  }
+  if (chips.children.length) $('.island-controls', el)?.before(chips);
 }
 
-function initIsland() {
+function playerStyle() {
+  return ['pill', 'card', 'bar', 'mini'].includes(S.playerStyle) ? S.playerStyle : 'pill';
+}
+
+/** The player pinned inside the menu bar: 'bar' shows artwork, 'mini' is text-only. */
+function renderBarPlayer(m, style) {
+  const host = $('#bar-player');
+  if (!host) return;
+  const sig = JSON.stringify([m.title, m.artist, m.playing, !!m.art, style]);
+  if (host.dataset.sig === sig) return;
+  host.dataset.sig = sig;
+  host.dataset.style = style;
+  host.replaceChildren(
+    style === 'bar' && h('span', { class: 'bar-player-art', style: m.art ? `background-image:url("${m.art}")` : '' }, m.art ? null : svg(ICONS.music)),
+    h('span', { class: 'bar-player-title', text: m.artist ? `${m.title} · ${m.artist}` : m.title }),
+    h('button', { class: 'bar-player-btn', 'data-bp': 'previous', 'aria-label': 'Previous' }, svg('<svg viewBox="0 0 20 20"><path d="M5 4h2v12H5zM16 4v12L8 10z" fill="currentColor"/></svg>')),
+    h('button', { class: 'bar-player-btn', 'data-bp': 'toggle', 'aria-label': 'Play or pause' }, svg(m.playing ? ICONS.pause : ICONS.play)),
+    h('button', { class: 'bar-player-btn', 'data-bp': 'next', 'aria-label': 'Next' }, svg('<svg viewBox="0 0 20 20"><path d="M13 4h2v12h-2zM4 4v12l8-6z" fill="currentColor"/></svg>')),
+    h('span', { class: 'island-eq', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'), h('i')),
+  );
+  if (!host.dataset.wired) {
+    host.dataset.wired = '1';
+    host.addEventListener('click', e => {
+      const btn = e.target.closest('[data-bp]');
+      if (btn) { e.stopPropagation(); call('mediaControl', { action: btn.dataset.bp }).catch(() => {}); setTimeout(refreshMedia, 350); return; }
+      toggleMediaPanel(); // clicking the pinned player pulls the media panel down
+    });
+    host.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); playerStyleMenu(e.clientX, e.clientY); });
+  }
+}
+
+function playerStyleMenu(x, y) {
+  showMenu(x, y, [
+    ...[['pill', 'Floating pill'], ['card', 'Glass card'], ['bar', 'Pinned in the bar'], ['mini', 'Mini in the bar']].map(([id, label]) =>
+      ({ label, checked: playerStyle() === id, action: () => setPref('playerStyle', id) })),
+    '-',
+    { label: (S.islandChips || {}).battery ? 'Hide battery chip' : 'Show battery chip', action: () => { S.islandChips = { focus: false, ...(S.islandChips || {}), battery: !(S.islandChips || {}).battery }; save(); renderIsland(); } },
+    { label: (S.islandChips || {}).focus ? 'Hide Focus chip' : 'Show Focus chip', action: () => { S.islandChips = { battery: false, ...(S.islandChips || {}), focus: !(S.islandChips || {}).focus }; save(); renderIsland(); } },
+    '-',
+    { label: 'Reset to centre', action: () => { S.islandPos = { x: 44, y: 3 }; save(); renderIsland(); } },
+  ]);
+}
+
+function islandChipOn(key) { return !!(S.islandChips || {})[key]; }
+
+function batteryChipIcon(b) {
+  const charging = !!b.charging;
+  return svg(`<svg viewBox="0 0 20 20" width="11" height="11"><rect x="2" y="6" width="13" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="15.5" y="8.5" width="2.5" height="3" rx="1" fill="currentColor"/>${charging ? '<path d="M9.5 6.5 6.5 10.5h3l-1.5 3 4-4.5h-2.6z" fill="currentColor"/>' : `<rect x="4" y="8" width="${Math.max(1.5, 9 * Math.min(100, b.level) / 100)}" height="4" rx="1" fill="currentColor"/>`}</svg>`);
+}
+
+function applyIslandPosition() {
   const el = $('#island');
+  el.style.left = '50%'; el.style.top = '4px'; el.style.transform = 'translateX(-50%)';
+}
+
+/* ---------- The pill's own controls (transport, panel, style menu) ---------- */
+
+function initIslandControls() {
+  const el = $('#island');
+  if (!el) return;
   for (const btn of $$('[data-island]', el)) {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
@@ -1444,10 +1935,118 @@ function initIsland() {
       catch (err) { toast(err.message); }
     });
   }
-  // The pill grows on hover to show its controls; keep the clickable area in step.
-  el.addEventListener('mouseenter', () => requestAnimationFrame(() => setTimeout(updateRegion, 200)));
-  el.addEventListener('mouseleave', () => setTimeout(updateRegion, 250));
+  // A plain click on the pill (not on a button) pulls the media panel down.
+  el.addEventListener('click', e => {
+    if (e.target.closest('button') || !media) return;
+    toggleMediaPanel();
+  });
+  // Right-click for the style menu.
+  el.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    playerStyleMenu(e.clientX, e.clientY);
+  });
 }
+
+/* ---------- Media panel pulled down from the pill ---------- */
+
+const MEDIA_PANEL_DEFAULTS = { source: true, art: true, progress: true, footer: true, reminders: true };
+let mediaPanelTimer = 0;
+
+function mediaPanelOpts(key) {
+  const o = { ...MEDIA_PANEL_DEFAULTS, ...(S.mediaPanel || {}) };
+  return key ? o[key] : o;
+}
+
+function toggleMediaPanel(force) {
+  const panel = $('#media-panel');
+  const show = force ?? panel.hidden;
+  if (!show) { closeOverlays(); return; }
+  // Unhide BEFORE building: placeMediaPanel measures the box, and display:none would
+  // measure 0 — the panel would paint at the wrong spot and jump a tick later.
+  panel.hidden = false;
+  renderMediaPanel();
+  updateRegion();
+  clearInterval(mediaPanelTimer);
+  mediaPanelTimer = setInterval(() => { if (panel.hidden) return clearInterval(mediaPanelTimer); updateMediaPanelProgress(); }, 500);
+}
+
+/** Positions the panel under wherever the pill currently sits (pill/card or the pinned bar style). */
+function placeMediaPanel() {
+  const box = $('#media-panel-box');
+  if (!box) return;
+  const anchor = ['#island', '#bar-player']
+    .map(s => $(s))
+    .find(el => el && !el.hidden && el.getBoundingClientRect().width > 0);
+  const r = anchor
+    ? anchor.getBoundingClientRect()
+    : { left: innerWidth / 2, width: 0, bottom: 4 }; // no visible pill: drop from top-centre anyway
+  box.style.left = Math.round(Math.max(10, Math.min(innerWidth - box.offsetWidth - 10, r.left + r.width / 2 - box.offsetWidth / 2))) + 'px';
+  box.style.top = Math.round(r.bottom + 10) + 'px';
+}
+
+function renderMediaPanel() {
+  const box = $('#media-panel-box');
+  if (!box) return;
+  const m = media || {};
+  const opts = mediaPanelOpts();
+  const transport = [['previous', '<svg viewBox="0 0 20 20"><path d="M5 4h2v12H5zM16 4v12L8 10z" fill="currentColor"/></svg>'],
+    ['toggle', m.playing ? ICONS.pause : ICONS.play],
+    ['next', '<svg viewBox="0 0 20 20"><path d="M13 4h2v12h-2zM4 4v12l8-6z" fill="currentColor"/></svg>']];
+  box.replaceChildren(
+    h('div', { class: 'mp-head' },
+      h('div', { class: 'mp-tabs' },
+        h('button', { class: 'on', text: 'Music' }),
+        opts.source ? h('span', { class: 'mp-source muted', text: sourceName(m.app) || '' }) : null),
+      h('button', { class: 'mp-close', 'aria-label': 'Close', onclick: () => closeOverlays() }, svg('<svg viewBox="0 0 20 20"><path d="M5 5l10 10M15 5 5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>'))),
+    h('div', { class: 'mp-body' },
+      (opts.art !== false) && h('div', { class: 'mp-art', style: m.art ? `background-image:url("${m.art}")` : '' }, m.art ? null : svg(ICONS.music)),
+      h('div', { class: 'mp-meta' },
+        h('b', { text: m.title || 'Nothing playing' }),
+        h('span', { class: 'muted', text: m.artist || (m.app ? sourceName(m.app) : '') }),
+        h('div', { class: 'mp-controls' }, ...transport.map(([action, icon]) =>
+          h('button', { 'data-mp': action, onclick: async e => { e.stopPropagation(); await call('mediaControl', { action }); setTimeout(refreshMedia, 350); } }, svg(icon)))))),
+    opts.progress !== false && h('div', { class: 'mp-progress' },
+      h('span', { class: 'mp-time', id: 'mp-pos', text: clockTime(m.position || 0) }),
+      h('div', { class: 'mp-bar' }, h('i', { id: 'mp-bar', style: `width:${m.duration ? Math.min(100, (m.position || 0) / m.duration * 100) : 0}%` })),
+      h('span', { class: 'mp-time', id: 'mp-dur', text: clockTime(m.duration || 0) })),
+    opts.footer !== false && h('div', { class: 'mp-foot' },
+      h('span', { class: 'muted', text: opts.date === false ? '' : new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) }),
+      h('span', { class: 'mp-foot-actions' },
+        opts.reminders !== false && h('button', { onclick: () => { closeOverlays(); openRemindersModal(); } }, svg(NAV_ICONS.widgets), ' Reminders'))),
+  );
+  placeMediaPanel();
+}
+
+function updateMediaPanelProgress() {
+  const m = media || {};
+  placeMediaPanel(); // keep hanging from the pill even if the pill resizes (track change)
+  const bar = document.getElementById('mp-bar'), pos = document.getElementById('mp-pos');
+  if (bar && m.duration) bar.style.width = Math.min(100, (m.position || 0) / m.duration * 100) + '%';
+  if (pos) pos.textContent = clockTime(m.position || 0);
+  const toggle = document.querySelector('[data-mp="toggle"]');
+  if (toggle && m.playing != null) toggle.innerHTML = (m.playing ? ICONS.pause : ICONS.play);
+}
+
+// Right-click the panel to choose what it shows.
+addEventListener('contextmenu', e => {
+  if (!e.target.closest?.('#media-panel-box')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const toggleOpt = (key, label) => ({ label, checked: mediaPanelOpts(key), action: () => {
+    S.mediaPanel = { ...MEDIA_PANEL_DEFAULTS, ...(S.mediaPanel || {}), [key]: !mediaPanelOpts(key) };
+    save(); renderMediaPanel();
+  } });
+  showMenu(e.clientX, e.clientY, [
+    toggleOpt('source', 'Show the source app'),
+    toggleOpt('art', 'Show album artwork'),
+    toggleOpt('progress', 'Show the progress bar'),
+    toggleOpt('date', 'Show today’s date'),
+    toggleOpt('reminders', 'Show the Reminders link'),
+    '-',
+    { label: 'Done', action: () => {} },
+  ]);
+}, true);
 
 /* ---------- Keyboard language (shell layer) ---------- */
 
@@ -1577,6 +2176,9 @@ function applyWidgetVisibility() {
   $('#hidden-widgets').replaceChildren(...(editing ? S.hidden.filter(id => WIDGETS[id]).map(id =>
     h('button', { class: 'add-chip', text: '+ ' + WIDGETS[id], onclick: () => { S.hidden = S.hidden.filter(x => x !== id); save(); applyWidgetVisibility(); } })) : []));
 
+  const visibleWidgets = $$('[data-widget]').filter(el => !el.hidden);
+  const empty = $('#widget-empty-state');
+  if (empty) empty.hidden = visibleWidgets.length > 0 || !editing;
   for (const badge of $$('.remove-badge')) badge.remove();
   if (editing) {
     for (const el of $$('[data-widget]')) {
@@ -1593,7 +2195,7 @@ function toggleEditing(on = !editing) {
   editing = on;
   if (on && !S.showWidgets) { S.showWidgets = true; save(); }
   $('#widget-panel').classList.toggle('editing', editing);
-  $('#edit-widgets span').textContent = editing ? 'Done' : 'Edit widgets';
+  document.body.classList.toggle('editing-widgets', editing);
   applyWidgetVisibility();
 }
 
@@ -1973,7 +2575,11 @@ function hideMenu() {
 function closeOverlays() {
   if (!IS_SHELL) return;
   hideMenu();
+  // Keep the native Alt+Tab cycle and this overlay in sync when another surface closes overlays.
+  if (IS_SHELL && typeof finishSwitcher === 'function') finishSwitcher(false);
   for (const sel of FULLSCREEN_OVERLAYS) if (sel !== '#lock') $(sel).hidden = true;
+  // Dismissing the welcome any other way still counts as "seen".
+  if (!$('#onboard').hidden) finishOnboard();
   $('#launchpad').classList.remove('dragging-out');
   syncShell();
 }
@@ -1993,6 +2599,9 @@ const MENUS = {
     { label: 'Restart…', action: () => systemAction('restart') },
     { label: 'Shut Down…', action: () => systemAction('shutdown') },
     '-',
+    { label: 'Haven Settings…', action: () => openSettings() },
+    { label: 'Restart Haven', action: () => call('restartHaven') },
+    '-',
     { label: 'Exit Haven', hint: 'Ctrl+Alt+Q', action: () => call('quit') },
   ],
   app: () => {
@@ -2001,6 +2610,7 @@ const MENUS = {
       { label: 'About Haven', action: () => toast(`Haven ${env.version || ''}: a calmer desktop on top of Windows.`) },
       '-',
       { label: 'Settings…', action: () => openSettings() },
+      { label: 'Restart Haven', action: () => call('restartHaven') },
       '-',
       { label: 'Exit Haven', hint: 'Ctrl+Alt+Q', action: () => call('quit') },
     ];
@@ -2136,7 +2746,6 @@ function initShellEvents() {
 }
 
 function initWidgetEvents() {
-  $('#edit-widgets').addEventListener('click', () => toggleEditing());
   $('#batteries-refresh').addEventListener('click', () => refreshBatteries(true));
   $('#cal-prev').addEventListener('click', () => { calOffset--; renderCalendar(); });
   $('#cal-next').addEventListener('click', () => { calOffset++; renderCalendar(); });
@@ -2151,6 +2760,9 @@ const COMMANDS = {
   openLaunchpad: () => openLaunchpad(),
   openSpotlight: d => openSpotlight(d),
   openReminders: () => openRemindersModal(),
+  openWidgetGallery: () => openWidgetGallery(),
+  widgetOptions: d => openWidgetOptions(d.id),
+  widgetOpacity: d => COMMANDS.widgetOpacity?.(d),
   toast: text => toast(text),
   menu: (d, from) => showMenu(d.x, d.y, d.items.map(it => (it === '-' || it.note) ? it : {
     ...it, action: () => from === PART ? remoteMenuActions.get(it.id)?.() : call('send', { to: from, name: 'menuPick', data: { id: it.id } }),
@@ -2174,8 +2786,10 @@ async function boot() {
     call('getState').catch(() => null),
     call('account').catch(() => ({})),
   ]);
+  hadSavedState = !!saved;
   env = e || {};
   account = acct || {};
+  if (!saved && IS_DESKTOP) setTimeout(() => toast('Haven couldn’t read your saved settings, so it started from defaults. Your last backup was restored where one existed.'), 1200);
   S = { ...DEFAULTS, ...(saved || {}) };
   synced = {};
   markSynced(saved || {});
@@ -2206,7 +2820,7 @@ async function boot() {
     initShellEvents();
     initDock();
     initDockReveal();
-    initIsland();
+    initIslandControls();
     initSpotlight();
     renderDock(true);
     syncShell();
@@ -2234,11 +2848,158 @@ async function boot() {
     setInterval(refreshBatteries, 60_000);
     refreshWeather();
     pollMedia();
+    renderNetwork();
+    setInterval(renderNetwork, 30_000);
+    renderClipboard();
   }
 
   if (IS_SHELL) initShellFeatures();
   if (IS_DESKTOP) initDesktopFeatures();
+
+  // Widgets added after a user's first run start hidden — one quiet migration.
+  if (IS_DESKTOP && saved && !S.widgetsV2) {
+    S.hidden = [...new Set([...(S.hidden || []), 'network', 'clipboard'])];
+    if (hadSavedState) save();
+    setPref('widgetsV2', true);
+  }
+
+  // First run: a two-step welcome over the live desktop (pick a look, set your city).
+  if (IS_SHELL && !S.onboarded) setTimeout(showOnboard, 1100);
+}
+
+/* ---------- First-run onboarding ---------- */
+
+let onboardStep = 0;
+
+function showOnboard() {
+  const panel = $('#onboard');
+  if (!panel || panel.hidden === false) return;
+  onboardStep = 0;
+  renderOnboard();
+  panel.hidden = false;
+  syncShell();
+}
+
+function finishOnboard() {
+  const panel = $('#onboard');
+  if (panel && panel.hidden === false) {
+    panel.hidden = true;
+    setPref('onboarded', true);
+    syncShell();
+  }
+}
+
+function renderOnboard() {
+  const panel = $('#onboard');
+  if (!panel) return;
+  panel.replaceChildren(
+    h('div', { class: 'onboard-card' },
+      onboardStep === 0 ? onboardLooks() : onboardCity()),
+  );
+  (panel.querySelector('.onboard-city') ?? panel.querySelector('.onboard-next'))?.focus();
+}
+
+function onboardLooks() {
+  const picks = PRESET_LOOKS.filter(l => ['sonoma', 'monterey', 'graphite', 'ember'].includes(l.id));
+  const grid = h('div', { class: 'onboard-looks' },
+    ...picks.map(p => {
+      const card = pickCard(p.name, lookPreview(p.look), lookMatches(p.look), () => {
+        applyLook(p.look);
+        onboardStep = 1;
+        renderOnboard();
+      });
+      return card;
+    }));
+  return [
+    h('div', { class: 'onboard-rose' }, h('img', { src: 'rose-logo.png', alt: '' })),
+    h('h2', { text: 'Welcome to Haven' }),
+    h('p', { class: 'onboard-sub', text: 'Pick a look — you can change everything later in the Style Studio.' }),
+    grid,
+    h('button', { class: 'onboard-next onboard-skip', text: 'Keep the current look →', onclick: () => { onboardStep = 1; renderOnboard(); } }),
+  ];
+}
+
+function onboardCity() {
+  const results = h('div', { class: 'onboard-results' });
+  const input = h('input', { class: 'field onboard-city', placeholder: 'Search for a city…' });
+  const find = async () => {
+    const q = input.value.trim();
+    if (!q) return;
+    results.replaceChildren(h('span', { class: 'onboard-muted', text: 'Searching…' }));
+    try {
+      const list = await geocode(q);
+      results.replaceChildren(...(list.length
+        ? list.map(r => h('button', { class: 'onboard-city', text: r.name + (r.admin ? ' — ' + r.admin : ''), onclick: () => { setPref('city', r); finishOnboard(); } }))
+        : [h('span', { class: 'onboard-muted', text: 'No matching city.' })]));
+      results.querySelector('button')?.focus();
+    } catch { results.replaceChildren(h('span', { class: 'onboard-muted', text: 'Couldn\u2019t reach the weather service.' })); }
+  };
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') find(); });
+  return [
+    h('div', { class: 'onboard-rose' }, h('img', { src: 'rose-logo.png', alt: '' })),
+    h('h2', { text: 'Where are you?' }),
+    h('p', { class: 'onboard-sub', text: 'For weather on your desktop. You can also skip this.' }),
+    input,
+    results,
+    h('div', { class: 'onboard-row' },
+      h('button', { class: 'onboard-skip', text: '← Back', onclick: () => { onboardStep = 0; renderOnboard(); } }),
+      h('button', { class: 'onboard-next', text: 'Skip →', onclick: finishOnboard })),
+  ];
 }
 
 // Wait for settings.js (loaded after this file) before starting.
 addEventListener("DOMContentLoaded", boot);
+
+
+/* ---------- Network widget: Wi-Fi name, signal, status ---------- */
+async function renderNetwork() {
+  const el = document.querySelector('[data-widget="network"]');
+  if (!el || el.hidden) return;
+  let n = {};
+  try { n = await call('network') || {}; } catch { }
+  const state = document.getElementById('net-state');
+  const name = document.getElementById('net-name');
+  const type = document.getElementById('net-type');
+  const bars = document.getElementById('net-bars');
+  if (!state || !name) return;
+  state.textContent = n.internet ? 'online' : n.connected ? 'connected' : 'offline';
+  name.textContent = n.name || (n.connected ? 'Connected' : 'Not connected');
+  type.textContent = n.type === 'wifi' ? 'Wi-Fi' : n.type || '';
+  if (bars) {
+    const level = n.bars == null ? (n.internet ? 4 : 0) : n.bars;
+    bars.replaceChildren(...[0, 1, 2, 3].map(i =>
+      h('i', { class: i < level ? 'on' : '', style: `height:${4 + i * 3}px` })));
+  }
+}
+
+/* ---------- Clipboard widget: recent items, click to re-copy ---------- */
+async function renderClipboard() {
+  const el = document.querySelector('[data-widget="clipboard"]');
+  if (!el || el.hidden) return;
+  const list = document.getElementById('clip-list');
+  const count = document.getElementById('clip-widget-count');
+  if (!list) return;
+  if (S.clipboardHistory === false) {
+    count.textContent = '';
+    list.replaceChildren(h('div', { class: 'clip-empty', text: 'Clipboard history is off — enable it in Settings.' }));
+    return;
+  }
+  let items = [];
+  try { items = await call('clipHistory') || []; } catch { }
+  if (count) count.textContent = items.length ? `${items.length} saved` : '';
+  const usable = items.filter(c => c.kind !== 'image').slice(0, 5);
+  if (!usable.length) {
+    list.replaceChildren(h('div', { class: 'clip-empty', text: 'Nothing copied yet. Copy anything and it lands here.' }));
+    return;
+  }
+  list.replaceChildren(...usable.map(c => {
+    const label = c.kind === 'files'
+      ? c.text.split('\n').map(p => p.split('\\').pop()).join(', ')
+      : c.text.replace(/\s+/g, ' ').trim();
+    return h('button', {
+      class: 'clip-row' + (c.pinned ? ' pinned' : ''),
+      title: label,
+      onclick: async () => { try { await call('clipPaste', { id: c.id, paste: false }); toast('Copied'); } catch { } },
+    }, h('span', { class: 'clip-text', text: truncate(label, 60) || '(empty)' }), h('span', { class: 'clip-app', text: c.app === 'Snippet' ? 'snippet' : '' }));
+  }));
+}

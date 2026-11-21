@@ -32,19 +32,14 @@ public partial class DesktopLayer : Window
             _shellMessage = Native.RegisterWindowMessage("SHELLHOOK");
             _taskbarCreated = Native.RegisterWindowMessage("TaskbarCreated");
             RegisterShellHookWindow(Handle);
+            FitToMonitor(); // now with a real hwnd: exact physical rect, not DIU guesses
             SendToBottom();
         };
         // "Show desktop" and similar can try to minimize us; the desktop never minimizes.
         StateChanged += (_, _) => { if (WindowState != WindowState.Normal) WindowState = WindowState.Normal; };
     }
 
-    public void FitToMonitor()
-    {
-        Left = 0;
-        Top = 0;
-        Width = SystemParameters.PrimaryScreenWidth;
-        Height = SystemParameters.PrimaryScreenHeight;
-    }
+    public void FitToMonitor() => ScreenFit.CoverMonitor(this);
 
     public void SendToBottom() =>
         Native.SetWindowPos(Handle, Native.HWND_BOTTOM, 0, 0, 0, 0, Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);

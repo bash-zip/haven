@@ -39,6 +39,10 @@ sealed class ShellLayer
     {
         _controller = await env.CreateCoreWebView2ControllerAsync(Handle);
         _controller.DefaultBackgroundColor = System.Drawing.Color.Transparent;
+        // A display-scale change updates the rasterization without resizing the window —
+        // Chromium must be forced to re-layout or the page paints at the new scale with a
+        // stale CSS viewport (content cut off at the right/bottom edges).
+        _controller.RasterizationScaleChanged += (_, _) => Resize();
         Resize();
     }
 
@@ -47,7 +51,14 @@ sealed class ShellLayer
         var m = Native.PrimaryMonitor();
         Native.SetWindowPos(Handle, Native.HWND_TOPMOST, m.Left, m.Top, m.Width, m.Height, Native.SWP_NOACTIVATE);
         if (_controller == null) return;
-        _controller.Bounds = new System.Drawing.Rectangle(0, 0, m.Width, m.Height);
+        var full = new System.Drawing.Rectangle(0, 0, m.Width, m.Height);
+        if (_controller.Bounds == full)
+        {
+            // Same physical size, but the DPI may have moved underneath: nudge the bounds
+            // (a same-value set is a no-op) so Chromium re-lays out with the new scale.
+            _controller.Bounds = new System.Drawing.Rectangle(0, 0, m.Width, m.Height - 1);
+        }
+        _controller.Bounds = full;
         _controller.NotifyParentWindowPositionChanged();
     }
 

@@ -247,27 +247,74 @@ function initDesktopFeatures() {
 const HOLD_MS = 320;
 let widgetDefaultOrder = null;
 
+/** The unscaled grid width a widget starts with (2 columns + gap in the panel). */
 function widgetSize(el) {
   const panelGrid = $('#widget-grid');
-  const col = (panelGrid.clientWidth - 14) / 2 || 178;
-  if (el.dataset.widget === 'tty') return Math.max(480, col * 2 + 14); // the terminal needs room for its text
+  const cw = panelGrid.clientWidth || 370; // a hidden panel reports 0 — fall back to the CSS width
+  const col = Math.max(120, (cw - 14) / 2);
   return el.classList.contains('wide') ? col * 2 + 14 : col;
 }
-
-const SCALE_MIN = 0.6, SCALE_MAX = 2.2;
-const widgetScale = id => Math.min(SCALE_MAX, Math.max(SCALE_MIN, S.widgetScale?.[id] || 1));
-
-/** Places a (possibly zoomed) floating widget at a screen position. CSS zoom also scales left/top. */
-function setWidgetXY(el, x, y) {
-  const z = parseFloat(el.style.zoom) || 1;
-  el.style.left = x / z + 'px';
-  el.style.top = y / z + 'px';
+function widgetBaseWidth(el) {
+  const grid = $('#widget-grid'), gap = 14;
+  const cw = grid.clientWidth || 370, col = Math.max(120, (cw - gap) / 2);
+  return el.classList.contains('wide') ? col * 2 + gap : col;
 }
 
-/** A grip in the bottom-right corner of every widget, for resizing. */
+/** Fixed CSS height for widgets that have one (0 = height follows the content). */
+function widgetClassHeight(el) {
+  if (el.classList.contains('square')) return 185;
+  if (el.classList.contains('tall')) return 208;
+  return 0;
+}
+
+const WIDGET_MIN = {};
+const widgetMin = el => (WIDGET_MIN[el.dataset.widget] || [150, 130]);
+
+/** Saved size in real pixels: id → [width, height]; height 0 = auto. */
+function widgetDims(el) {
+  const saved = S.widgetSize?.[el.dataset.widget];
+  if (Array.isArray(saved) && saved[0] > 4) return [saved[0], saved[1] > 4 ? saved[1] : widgetClassHeight(el)];
+  const z = Math.min(2.2, Math.max(.6, S.widgetScale?.[el.dataset.widget] || 1)); // pre-migration legacy scale
+  return [Math.round(widgetSize(el) * z), Math.round(widgetClassHeight(el) * z)];
+}
+
+/** Old states stored 0.6–3 multipliers; sizes are pixels now. Convert once, then drop the old keys. */
+function migrateWidgetSizes(all) {
+  const scales = Object.keys(S.widgetScale || {}), sizes = Object.entries(S.widgetSize || {}).filter(([, v]) => Array.isArray(v) && v[0] <= 3.5 && v[1] <= 3.5);
+  if (!scales.length && !sizes.length) return;
+  const next = { ...(S.widgetSize || {}) };
+  const px = (id, fx, fy) => {
+    const el = all?.find(x => x.dataset.widget === id);
+    const bw = el ? widgetSize(el) : 186, bh = el ? widgetClassHeight(el) : 0;
+    return [Math.round(bw * fx), bh ? Math.round(bh * fy) : 0];
+  };
+  for (const id of scales) next[id] = px(id, S.widgetScale[id], S.widgetScale[id]);
+  for (const [id, v] of sizes) next[id] = px(id, v[0], v[1]);
+  S.widgetSize = next;
+  S.widgetScale = {};
+  save();
+}
+
+/** Safe top/bottom bands for the menu bar and the Dock. */
+const TOP_SAFE = 34, BOTTOM_SAFE = 60, EDGE = 4;
+const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+
+/** Places a floating widget anywhere on the desktop, kept fully on screen. */
+function setWidgetXY(el, x, y) {
+  x = clamp(x, EDGE, Math.max(EDGE, innerWidth - el.offsetWidth - EDGE));
+  y = clamp(y, TOP_SAFE, Math.max(TOP_SAFE, innerHeight - el.offsetHeight - BOTTOM_SAFE));
+  el.style.left = Math.round(x) + 'px';
+  el.style.top = Math.round(y) + 'px';
+}
+
+/** A grip in the bottom-right corner of every widget, for resizing — only while arranging widgets. */
 function ensureResizeHandle(el) {
-  if (el.querySelector(':scope > .widget-resize')) return;
-  el.append(h('div', { class: 'widget-resize', title: 'Drag to resize', 'aria-hidden': 'true' }));
+  let grip = el.querySelector(':scope > .widget-resize');
+  if (!grip) {
+    grip = h('div', { class: 'widget-resize', title: 'Drag to resize', 'aria-hidden': 'true' });
+    el.append(grip);
+  }
+  grip.hidden = !editing;
 }
 
 /** Puts every widget where it belongs: floating at its saved spot, or in the panel in saved order. */
@@ -278,34 +325,79 @@ function placeWidgets() {
   if (!layer) { layer = h('div', { class: 'widget-float', id: 'widget-float' }); $('#widget-panel').after(layer); }
   const all = $$('[data-widget]');
   if (!widgetDefaultOrder) widgetDefaultOrder = all.map(el => el.dataset.widget);
+  migrateWidgetSizes(all);
   const order = [...(S.widgetOrder || []), ...widgetDefaultOrder].filter((id, i, a) => a.indexOf(id) === i);
 
   for (const id of order) {
     const el = all.find(x => x.dataset.widget === id);
     if (!el) continue;
+    // Render custom widget content
+    if (S.customWidgets?.some(w => w.id === id) && typeof renderCustomWidget === 'function') renderCustomWidget(el);
     const pos = S.widgetPos?.[id];
     if (pos) {
       if (el.parentElement !== layer) layer.append(el);
       el.classList.add('floating');
-      const w = widgetSize(el), z = widgetScale(id);
+      const [w, ch] = widgetDims(el);
       el.style.width = w + 'px';
-      el.style.zoom = z === 1 ? '' : z;
-      const x = Math.max(4, Math.min(innerWidth - w * z - 4, pos[0] * innerWidth));
-      const y = Math.max(34, Math.min(innerHeight - 60, pos[1] * innerHeight));
-      setWidgetXY(el, x, y);
+      el.style.height = ch ? ch + 'px' : '';
+      el.style.transform = '';
+      setWidgetXY(el, pos[0] * innerWidth, pos[1] * innerHeight);
+      el.style.opacity = S.widgetOpacity?.[id] ?? '';
     } else {
       grid.append(el); // re-appending in order also sorts the panel
       el.classList.remove('floating');
-      el.style.left = el.style.top = el.style.width = el.style.zoom = '';
+      el.style.left = el.style.top = el.style.width = el.style.height = '';
+      el.style.transform = '';
+      el.style.opacity = '';
     }
     ensureResizeHandle(el);
   }
 }
 
+/** Alignment guides while dragging: screen centre/edges and other floating widgets.
+    Returns [x, y, snapDx, snapDy]; the caller folds the snap into the grab offset so the
+    widget never sticks — reversing the cursor moves it back immediately. */
+const SNAP = 8;
+function snapPosition(el, x, y) {
+  const w = el.offsetWidth, height = el.offsetHeight;
+  const cands = [
+    { at: EDGE, kind: 'x' }, { at: (innerWidth - w) / 2, kind: 'x' }, { at: innerWidth - w - EDGE, kind: 'x' },
+    { at: TOP_SAFE, kind: 'y' }, { at: (innerHeight - height) / 2, kind: 'y' }, { at: innerHeight - height - BOTTOM_SAFE, kind: 'y' },
+  ];
+  for (const other of $$('#widget-float > [data-widget]')) {
+    if (other === el || other.hidden) continue;
+    const r = other.getBoundingClientRect();
+    cands.push({ at: r.left, kind: 'x' }, { at: r.right - w, kind: 'x' }, { at: r.top, kind: 'y' }, { at: r.bottom - height, kind: 'y' });
+  }
+  const lines = { x: [], y: [] };
+  let sx = null, sy = null;
+  for (const c of cands) {
+    const cur = c.kind === 'x' ? x : y;
+    if (Math.abs(c.at - cur) <= SNAP && (c.kind === 'x' ? sx == null || Math.abs(c.at - x) < Math.abs(sx - x) : sy == null || Math.abs(c.at - y) < Math.abs(sy - y))) {
+      if (c.kind === 'x') sx = c.at; else sy = c.at;
+      lines[c.kind].push(c.at);
+    }
+  }
+  showSnapLines(lines, w, height);
+  return [sx ?? x, sy ?? y, sx == null ? 0 : sx - x, sy == null ? 0 : sy - y];
+}
+
+let snapLayer = null;
+function showSnapLines({ x, y }) {
+  if (!x.length && !y.length) return hideSnapLines();
+  if (!snapLayer) { snapLayer = h('div', { id: 'snap-lines' }); document.body.append(snapLayer); }
+  snapLayer.replaceChildren(
+    ...x.map(lx => h('div', { class: 'snap-line v', style: `left:${lx}px;height:100vh` })),
+    ...y.map(ly => h('div', { class: 'snap-line h', style: `top:${ly}px;width:100vw` })));
+  snapLayer.hidden = false;
+}
+function hideSnapLines() { if (snapLayer) snapLayer.hidden = true; }
+
 function initWidgetDragging() {
   document.addEventListener('pointerdown', e => {
     const el = e.target.closest?.('[data-widget]');
     if (!el || e.button !== 0) return;
+    if (S.widgetLock?.[el.dataset.widget]) return; // locked in place
     if (e.target.closest('.widget-resize')) return startResize(el, e);
     if (e.target.closest('button, input, textarea, select, a, .remove-badge')) return;
 
@@ -314,6 +406,9 @@ function initWidgetDragging() {
     let dx = 0, dy = 0;
 
     if (!armed) holdTimer = setTimeout(() => { armed = true; el.classList.add('lifted'); }, HOLD_MS);
+    // Pointer capture keeps the gesture alive even if the pointer leaves the page,
+    // and always delivers the pointerup that ends it.
+    try { el.setPointerCapture(e.pointerId); } catch { /* older runtime */ }
 
     const begin = ev => {
       dragging = true;
@@ -323,7 +418,9 @@ function initWidgetDragging() {
       // Lift it out of the panel into the floating layer, exactly where it is now.
       const layer = $('#widget-float');
       if (el.parentElement !== layer) {
-        el.style.width = r.width + 'px';
+        const layoutW = widgetBaseWidth(el), layoutH = el.offsetHeight;
+        el.style.width = layoutW + 'px';
+        if (widgetClassHeight(el)) el.style.height = layoutH + 'px';
         layer.append(el);
       }
       el.classList.add('floating', 'dragging');
@@ -336,25 +433,36 @@ function initWidgetDragging() {
       if (!armed) { if (moved > 6) cleanup(); return; } // a normal click or scroll, not a move
       if (!dragging && moved > 3) begin(ev);
       if (!dragging) return;
-      setWidgetXY(el, ev.clientX - dx, ev.clientY - dy);
+      let x = ev.clientX - dx, y = ev.clientY - dy;
+      if (!ev.altKey) { // hold Alt to place freely
+        const rawX = x, rawY = y;
+        [x, y] = snapPosition(el, x, y);
+        dx -= x - rawX; dy -= y - rawY; // fold the snap into the grab so it can't stick
+      } else hideSnapLines();
+      setWidgetXY(el, x, y);
       const overPanel = pointInPanel(ev.clientX, ev.clientY);
       $('#widget-panel').classList.toggle('drop-hover', overPanel);
     };
 
     const up = ev => {
-      if (dragging) drop(el, ev.clientX, ev.clientY, ev.clientX - dx, ev.clientY - dy);
-      cleanup();
+      hideSnapLines();
+      if (dragging) drop(el, ev.clientX, ev.clientY, el.offsetLeft, el.offsetTop);
+      cleanup(ev.pointerId);
     };
 
-    function cleanup() {
+    function cleanup(pid) {
       clearTimeout(holdTimer);
       el.classList.remove('lifted', 'dragging');
       $('#widget-panel').classList.remove('drop-zone', 'drop-hover');
-      document.removeEventListener('pointermove', move);
-      document.removeEventListener('pointerup', up);
+      if (pid != null) try { el.releasePointerCapture(pid); } catch { /* already gone */ }
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', cancel);
     }
-    document.addEventListener('pointermove', move);
-    document.addEventListener('pointerup', up);
+    const cancel = () => { hideSnapLines(); cleanup(); };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', cancel);
   });
 
   // Right-click a widget for its options.
@@ -365,11 +473,15 @@ function initWidgetDragging() {
     e.stopPropagation();
     const id = el.dataset.widget;
     showMenu(e.clientX, e.clientY, [
-      { label: 'Edit Widgets', action: () => toggleEditing(true) },
+      { label: editing ? 'Done arranging widgets' : 'Edit Widgets', action: () => toggleEditing(!editing) },
       '-',
-      ...[['Small', 0.8], ['Medium', 1], ['Large', 1.3], ['Extra Large', 1.7]].map(([label, z]) => ({
-        label, checked: !!S.widgetPos?.[id] && Math.abs(widgetScale(id) - z) < 0.01, action: () => setWidgetScale(el, z),
+      ...[['Compact', .8], ['Balanced', 1], ['Large', 1.3], ['XL', 1.7]].map(([label, z]) => ({
+        label, checked: !!S.widgetPos?.[id] && Math.abs(widgetDims(el)[0] / widgetSize(el) - z) < .03, action: () => setWidgetScale(el, z),
       })),
+      { label: 'Resize…', action: () => openWidgetSizeEditor(el) },
+      { label: S.widgetLock?.[id] ? 'Unlock Position' : 'Lock Position', action: () => { S.widgetLock = { ...(S.widgetLock || {}), [id]: !S.widgetLock?.[id] }; save(); call('patchState', { set: { widgetLock: S.widgetLock }, del: [] }).catch(() => {}); } },
+      { label: 'Opacity…', action: () => toShell('widgetOpacity', { id }) },
+      typeof WIDGET_OPTIONS !== 'undefined' && WIDGET_OPTIONS[id]?.length && { label: 'Widget Options…', action: () => toShell('widgetOptions', { id }) },
       '-',
       S.widgetPos?.[id] && { label: 'Put Back in the Panel', action: () => setWidgetPos(id, null) },
       Object.keys(S.widgetPos || {}).length > 1 && { label: 'Put All Widgets Back', action: () => { S.widgetPos = {}; save(); placeWidgets(); refreshLiquid(); renderDesktopIcons(); } },
@@ -388,40 +500,86 @@ function floatInPlace(el) {
   S.widgetPos = { ...(S.widgetPos || {}), [id]: [r.left / innerWidth, r.top / innerHeight] };
 }
 
+/** Size presets as multipliers of the widget's natural grid size. */
 function setWidgetScale(el, z) {
   const id = el.dataset.widget;
   floatInPlace(el);
-  S.widgetScale = { ...(S.widgetScale || {}), [id]: Math.round(z * 100) / 100 };
-  save();
-  placeWidgets();
-  refreshLiquid();
-  renderDesktopIcons();
+  const base = widgetSize(el), bh = widgetClassHeight(el);
+  setWidgetDimensions(el, base * z, bh ? bh * z : 0);
 }
 
-/** Drag the corner grip: the widget grows or shrinks evenly, so clocks and calendars keep their shape. */
+/** Real pixel size: width always, height only for widgets with a fixed one. */
+function setWidgetDimensions(el, width, height) {
+  const id = el.dataset.widget;
+  floatInPlace(el);
+  const [minW, minH] = widgetMin(el);
+  const w = Math.round(clamp(width, minW, Math.min(1100, innerWidth - 8)));
+  const hgt = height > 4 ? Math.round(clamp(height, minH, Math.min(1400, innerHeight - TOP_SAFE - BOTTOM_SAFE))) : 0;
+  S.widgetSize = { ...(S.widgetSize || {}), [id]: [w, hgt] };
+  S.widgetScale = { ...(S.widgetScale || {}) };
+  delete S.widgetScale[id];
+  save(); placeWidgets(); refreshLiquid(); renderDesktopIcons();
+}
+
+function openWidgetSizeEditor(el) {
+  const id = el.dataset.widget, [w0, h0] = widgetDims(el), fixed = widgetClassHeight(el) || h0 > 4;
+  const [minW, minH] = widgetMin(el);
+  const width = slider(minW, 900, 1, w0, v => { el.style.width = v + 'px'; }, v => setWidgetDimensions(el, v, h0));
+  const height = fixed ? slider(minH, 1000, 1, h0, v => { el.style.height = v + 'px'; }, v => setWidgetDimensions(el, w0, v)) : null;
+  openModal(`Resize ${WIDGETS[id] || 'Widget'}`, [
+    row('Width', 'Set the size in pixels — the content reflows.', width),
+    ...(height ? [row('Height', 'Set the size in pixels.', height)] : []),
+    button('Reset size', () => { const base = widgetSize(el), bh = widgetClassHeight(el); setWidgetDimensions(el, base, bh); closeOverlays(); }),
+  ]);
+}
+
+/** Per-widget translucency, 30–100%. */
+function openWidgetOpacity(el) {
+  const id = el.dataset.widget, cur = Math.round((S.widgetOpacity?.[id] ?? 1) * 100);
+  openModal(`${WIDGETS[id] || 'Widget'} Opacity`, [
+    row('Opacity', 'How see-through this widget is on the desktop.', slider(30, 100, 1, cur,
+      v => { el.style.opacity = v / 100; },
+      v => { S.widgetOpacity = { ...(S.widgetOpacity || {}), [id]: v / 100 }; save(); closeOverlays(); })),
+  ]);
+}
+
+/** Drag the corner grip: true pixel resize, top-left anchored (hold Alt to grow from the centre). */
 function startResize(el, e) {
+  if (!editing) return;
   e.preventDefault();
   e.stopPropagation();
   const id = el.dataset.widget;
   if (!S.widgetPos?.[id]) { floatInPlace(el); placeWidgets(); }
-  const r = el.getBoundingClientRect();
-  const z0 = widgetScale(id), sx = e.clientX, sy = e.clientY;
-  let z = z0;
+  const [w0, h0] = [el.offsetWidth || widgetBaseWidth(el), el.offsetHeight];
+  const fixedH = widgetClassHeight(el) > 0 || h0 > widgetClassHeight(el) + 4;
+  const [minW, minH] = widgetMin(el);
+  const sx = e.clientX, sy = e.clientY;
+  let w = w0, hgt = h0;
   el.classList.add('resizing');
+  try { el.setPointerCapture(e.pointerId); } catch { /* older runtime */ }
+  const apply = () => {
+    el.style.width = w + 'px';
+    if (fixedH) el.style.height = hgt + 'px';
+  };
   const move = ev => {
-    const grow = ((r.width + ev.clientX - sx) / r.width + (r.height + ev.clientY - sy) / r.height) / 2;
-    z = Math.min(SCALE_MAX, Math.max(SCALE_MIN, z0 * grow));
-    el.style.zoom = z;
-    setWidgetXY(el, r.left, r.top); // keep the top-left corner where it is
+    w = Math.round(clamp(w0 + ev.clientX - sx, minW, innerWidth - 8));
+    if (fixedH) hgt = Math.round(clamp(h0 + ev.clientY - sy, minH, innerHeight - TOP_SAFE - BOTTOM_SAFE));
+    apply();
+    if (!ev.altKey) setWidgetXY(el, el.offsetLeft, el.offsetTop); // keep fully on screen
   };
-  const up = () => {
-    document.removeEventListener('pointermove', move);
-    document.removeEventListener('pointerup', up);
+  const finish = pid => {
+    el.removeEventListener('pointermove', move);
+    el.removeEventListener('pointerup', up);
+    el.removeEventListener('pointercancel', cancel);
     el.classList.remove('resizing');
-    setWidgetScale(el, z);
+    if (pid != null) try { el.releasePointerCapture(pid); } catch { /* already gone */ }
+    setWidgetDimensions(el, w, fixedH ? hgt : 0);
   };
-  document.addEventListener('pointermove', move);
-  document.addEventListener('pointerup', up);
+  const up = ev => finish(ev.pointerId);
+  const cancel = () => finish();
+  el.addEventListener('pointermove', move);
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', cancel);
 }
 
 function pointInPanel(x, y) {
@@ -445,14 +603,20 @@ function drop(el, px, py, left, top) {
     S.widgetOrder = order;
     setWidgetPos(id, null);
   } else {
-    const snap = v => Math.round(v / 4) * 4; // a gentle grid keeps edges tidy
-    setWidgetPos(id, [snap(left) / innerWidth, snap(top) / innerHeight]);
+    // Anywhere on the desktop, aligned to an 8px grid. Saved as a fraction of the screen.
+    const x = clamp(Math.round(left / 8) * 8, EDGE, Math.max(EDGE, innerWidth - el.offsetWidth - EDGE));
+    const y = clamp(Math.round(top / 8) * 8, TOP_SAFE, Math.max(TOP_SAFE, innerHeight - el.offsetHeight - BOTTOM_SAFE));
+    setWidgetPos(id, [x / innerWidth, y / innerHeight]);
   }
 }
 
 function setWidgetPos(id, pos) {
   const next = { ...(S.widgetPos || {}) };
-  if (pos) next[id] = pos; else { delete next[id]; const sc = { ...(S.widgetScale || {}) }; delete sc[id]; S.widgetScale = sc; }
+  if (pos) next[id] = pos; else { // back in the panel: drop the custom size too
+    delete next[id];
+    const sc = { ...(S.widgetScale || {}) }; delete sc[id]; S.widgetScale = sc;
+    const sz = { ...(S.widgetSize || {}) }; delete sz[id]; S.widgetSize = sz;
+  }
   S.widgetPos = next;
   save();
   placeWidgets();

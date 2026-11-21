@@ -43,7 +43,7 @@ function renderLockExtras() {
   if (key === lockExtrasKey) return;
   lockExtrasKey = key;
   const ctl = (action, icon) => h('button', { 'aria-label': action, onclick: async e => { e.stopPropagation(); await call('mediaControl', { action }); setTimeout(refreshMedia, 350); } }, svg(icon));
-  box.replaceChildren(
+  box.replaceChildren(...[
     m && h('div', { class: 'lock-media', onmousedown: e => e.stopPropagation() },
       h('span', { class: 'lock-art', style: m.art ? `background-image:url("${m.art}")` : '' }, m.art ? null : svg(ICONS.music)),
       h('div', { class: 'lock-media-text' }, h('b', { text: m.title || 'Not playing' }), h('span', { text: m.artist || '' })),
@@ -51,9 +51,10 @@ function renderLockExtras() {
         ctl('previous', '<svg viewBox="0 0 20 20"><path d="M5 4h2v12H5zM16 4v12L8 10z" fill="currentColor"/></svg>'),
         ctl('toggle', m.playing ? ICONS.pause : ICONS.play),
         ctl('next', '<svg viewBox="0 0 20 20"><path d="M13 4h2v12h-2zM4 4v12l8-6z" fill="currentColor"/></svg>'))),
-    (bat || unread) && h('div', { class: 'lock-status' },
+    (bat || unread > 0) && h('div', { class: 'lock-status' },
       bat && h('span', { text: `${bat.charging ? '⚡ ' : ''}${bat.level}%` }),
-      unread && h('span', { text: `${unread} notification${unread === 1 ? '' : 's'}` })));
+      unread > 0 && h('span', { text: `${unread} notification${unread === 1 ? '' : 's'}` })),
+  ].filter(Boolean)); // empty slots must not turn into the text "null"
 }
 
 let helloReady = null;

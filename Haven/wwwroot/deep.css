@@ -219,3 +219,14 @@ html.part-secondary body > *:not(#wallpaper):not(.sec-root):not(script) { displa
   background: rgb(30 30 34 / .55); backdrop-filter: blur(28px) saturate(1.6); border: 1px solid rgb(255 255 255 / .14); }
 .sec-dock .dock-item { width: 52px; height: 52px; }
 .sec-dock:empty { display: none; }
+
+/* Bundled and BYO typefaces. */
+html[data-dc-font="satoshi"] { --font-display: "Satoshi", "Segoe UI Variable Display", "Segoe UI", sans-serif; }
+html[data-dc-font="satoshi"] body { font-family: "Satoshi", "Segoe UI Variable Text", "Segoe UI", sans-serif; }
+html[data-dc-font="sora"] { --font-display: "Sora", "Segoe UI Variable Display", "Segoe UI", sans-serif; }
+html[data-dc-font="sora"] body { font-family: "Sora", "Segoe UI Variable Text", "Segoe UI", sans-serif; }
+html[data-dc-font="sfpro"] { --font-display: "SF Pro Display", "SF Pro Text", "SF Pro", "Satoshi", "Segoe UI Variable Display", "Segoe UI", sans-serif; }
+html[data-dc-font="sfpro"] body { font-family: "SF Pro Text", "SF Pro", "Satoshi", "Segoe UI Variable Text", "Segoe UI", sans-serif; }
+
+/* Native dropdowns follow the theme instead of going white. */
+select.field option, select.field optgroup { background: rgb(var(--shell-rgb, 24 24 26) / .98); color: var(--text, #fff); }

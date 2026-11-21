@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>Haven Setup</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="glow g1"></div>
+<div class="glow g2"></div>
+<div class="dotgrid"></div>
+
+<!-- The top 46 logical px of this document double as the window's drag strip.
+     The C# hit-test treats that strip as HTCAPTION except the right 150px, which
+     holds the close button — keep it that way if you rearrange things. -->
+<header>
+  <div class="brand">
+    <img src="rose.png" alt="" draggable="false">
+    <span>Haven Setup</span>
+  </div>
+  <button class="winbtn" id="close" title="Close" aria-label="Close">
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+      <path d="M1.5 1.5l9 9M10.5 1.5l-9 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    </svg>
+  </button>
+</header>
+
+<main id="stage"></main>
+
+<footer>
+  <div class="meta" id="meta"></div>
+  <div class="steps" id="steps"></div>
+  <div class="spacer"></div>
+  <button class="btn ghost" id="back">Back</button>
+  <button class="btn primary" id="next">Continue</button>
+</footer>
+
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

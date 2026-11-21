@@ -7,7 +7,7 @@ namespace Haven;
 public sealed record CheckResult(string Area, string Name, bool? Ok, string Detail, string? Fix = null);
 
 /// <summary>
-/// Settings → About → System check: tests, on this PC, the things that only real hardware can
+/// Settings → About → System check: I test, on this PC, the things that only real hardware can
 /// show (tray, gestures, screenshots, Spaces, the hidden taskbar…) and says what's wrong.
 /// </summary>
 sealed partial class ShellHost
@@ -77,7 +77,7 @@ sealed partial class ShellHost
             bool ok = shot != null && shot.PixelWidth > 0;
             bool blank = ok && IsBlank(shot!);
             Add("Windows", "Screen capture", ok && !blank,
-                !ok ? "Couldn't capture the screen." : blank ? "The capture came back blank." : $"Works ({shot!.PixelWidth}×{shot.PixelHeight}). Screenshots go to {(Screenshots.Destination == "clipboard" ? "the clipboard only" : Screenshots.Destination == "pictures" ? Screenshots.DefaultFolder : Screenshots.Destination)}.");
+                !ok ? "Couldn't capture the screen." : blank ? "The capture came back blank." : $"Works ({shot!.PixelWidth}×{shot.PixelHeight}).");
         });
         Try("Windows", "Live window previews", () =>
         {

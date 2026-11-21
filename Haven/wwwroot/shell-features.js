@@ -117,6 +117,9 @@ let volumeTimer;
 
 function renderControlCenter() {
   const panel = $('#cc-panel');
+  panel.className = `cc-panel customized cc-${['balanced', 'compact', 'spacious'].includes(S.controlCenterDensity) ? S.controlCenterDensity : 'balanced'}${S.controlCenterGlow ? ' cc-luminous' : ''}${S.controlCenterShape === 'sharp' ? ' cc-sharp' : ''}`;
+  panel.style.setProperty('--cc-accent', S.controlCenterAccent || 'var(--accent)');
+  panel.style.setProperty('--cc-scale', String(Math.max(.9, Math.min(1.15, Number(S.controlCenterScale) || 1))));
   const wifiOn = radios?.wifi ?? (net?.type === 'wifi');
   const btOn = radios?.bluetooth;
   const m = media;
@@ -156,6 +159,9 @@ function renderControlCenter() {
           ['next', '<svg viewBox="0 0 20 20"><path d="M13 4h2v12h-2zM4 4v12l8-6z" fill="currentColor"/></svg>']]
           .map(([action, icon]) => h('button', { onclick: async () => { await call('mediaControl', { action }); setTimeout(async () => { await refreshMedia(); renderControlCenter(); }, 350); } }, svg(icon))))),
 
+    h('div', { class: 'cc-customize' },
+      h('span', { text: 'CONTROL SURFACE' }),
+      h('button', { text: 'Customize', onclick: openControlCenterSettings })),
     h('div', { class: 'cc-links' },
       h('button', { text: 'Network…', onclick: () => { closeOverlays(); openSettingsPage('network'); } }),
       h('button', { text: 'Sound…', onclick: () => { closeOverlays(); openSettingsPage('sound'); } }),
@@ -166,6 +172,7 @@ function renderControlCenter() {
 /* ---------- App switcher (Alt+Tab) and the swipe HUD ---------- */
 
 let sw = null; // { apps: [{ name, icon, win }], index }
+let swStep = 0, swFrame = 0;
 
 /** Running apps, one entry each, most recently used first. */
 function appsByRecency() {
@@ -191,35 +198,90 @@ function appsInDockOrder() {
   return order;
 }
 
+function refreshSwitcherWindows() {
+  if (!sw) return;
+  const fresh = appsByRecency();
+  if (!fresh.length) return finishSwitcher(false);
+  const key = sw.apps[sw.index]?.key;
+  sw.apps = fresh;
+  sw.index = Math.max(0, fresh.findIndex(a => a.key === key));
+  renderSwitcher();
+}
+
 function renderSwitcher() {
   const strip = $('#switcher-strip');
   strip.replaceChildren(...sw.apps.map((a, i) => h('div', { class: 'sw-app' + (i === sw.index ? ' on' : '') },
     appIcon({ name: a.name, icon: a.icon }), h('span', { text: a.name }))));
   $('#switcher').hidden = false;
+  clearTimeout(swHideTimer); // an active cycle always cancels any pending hide
   updateRegion();
+}
+
+let swShownAt = 0, swHideTimer = 0;
+
+function finishSwitcher(commit) {
+  if (!sw) return;
+  const chosen = sw.apps[sw.index];
+  const shownFor = performance.now() - swShownAt;
+  sw = null;
+  swStep = 0;
+  if (swFrame) cancelAnimationFrame(swFrame);
+  swFrame = 0;
+  // The focus happens right away; the strip stays up for a minimum beat, so a quick
+  // Alt+Tab tap still shows it instead of flashing for less than a frame.
+  if (commit && chosen) focusWindow(chosen.win);
+  const strip = $('#switcher');
+  clearTimeout(swHideTimer);
+  swHideTimer = setTimeout(() => {
+    strip.hidden = true;
+    $('#switcher-strip').replaceChildren();
+    updateRegion();
+  }, Math.max(0, 600 - shownFor));
+  updateRegion(); // sw is already null: the region treats the overlay as closed, so clicks pass
+}
+
+function scheduleSwitcherStep(delta) {
+  if (!sw) return;
+  swStep += delta;
+  if (swFrame) return;
+  swFrame = requestAnimationFrame(() => {
+    swFrame = 0;
+    if (!sw || !sw.apps.length) { swStep = 0; return; }
+    const n = sw.apps.length;
+    sw.index = (sw.index + swStep % n + n) % n;
+    swStep = 0;
+    Sound.play('switch');
+    renderSwitcher();
+  });
 }
 
 async function onSwitcher(cmd) {
   if (cmd === 'open') {
-    try { const res = await call('windows'); windows = res?.windows || windows; foreground = res?.foreground || foreground; } catch { /* use last */ }
+    // First paint from the last poll, so the first key never waits for EnumWindows/icon extraction.
     const apps = appsByRecency();
     if (!apps.length) return;
     sw = { apps, index: apps.length > 1 ? 1 : 0 };
+    swShownAt = performance.now();
     renderSwitcher();
+    try {
+      const res = await call('windows');
+      if (!sw) return; // user already released Alt or cancelled
+      windows = res?.windows || windows;
+      foreground = res?.foreground || foreground;
+      const fresh = appsByRecency();
+      if (fresh.length) {
+        const selected = sw.apps[sw.index]?.key;
+        sw.apps = fresh;
+        const ix = fresh.findIndex(a => a.key === selected);
+        sw.index = ix >= 0 ? ix : Math.min(sw.index, fresh.length - 1);
+        renderSwitcher();
+      }
+    } catch { /* keep cached windows */ }
     return;
   }
   if (!sw) return;
-  if (cmd === 'next' || cmd === 'prev') {
-    sw.index = (sw.index + (cmd === 'next' ? 1 : -1) + sw.apps.length) % sw.apps.length;
-    Sound.play('switch');
-    renderSwitcher();
-  } else if (cmd === 'commit' || cmd === 'cancel') {
-    const chosen = sw.apps[sw.index];
-    sw = null;
-    $('#switcher').hidden = true;
-    updateRegion();
-    if (cmd === 'commit' && chosen) focusWindow(chosen.win);
-  }
+  if (cmd === 'next' || cmd === 'prev') scheduleSwitcherStep(cmd === 'next' ? 1 : -1);
+  else if (cmd === 'commit' || cmd === 'cancel') finishSwitcher(cmd === 'commit');
 }
 
 
@@ -275,8 +337,20 @@ const ACTIONS = {
 
 /** Multi-finger taps, which Windows would otherwise answer with its own Search and notifications. */
 function onTap(fingers) {
-  if (fingers === 3) openSpotlight();
+  if (fingers === 3) return; // avoid unexpected search-bar popups from accidental three-finger taps
   else if (fingers === 4) toggleNotificationCenter();
+}
+
+function openControlCenterSettings() {
+  const color = h('input', { type: 'color', value: S.controlCenterAccent || '#3b82f6', oninput: e => { S.controlCenterAccent = e.target.value; save(); renderControlCenter(); } });
+  openModal('Control Center Appearance', [
+    row('Density', 'Choose the spacing and scale of the quick controls.', segmented([['compact', 'Compact'], ['balanced', 'Balanced'], ['spacious', 'Spacious']], S.controlCenterDensity || 'balanced', v => { S.controlCenterDensity = v; save(); renderControlCenter(); })),
+    row('Panel shape', null, segmented([['soft', 'Soft'], ['sharp', 'Sharp']], S.controlCenterShape || 'soft', v => { S.controlCenterShape = v; save(); renderControlCenter(); })),
+    row('Accent colour', 'Use the Haven accent or set a custom highlight colour.', color),
+    row('Accent glow', null, toggle(!!S.controlCenterGlow, v => { S.controlCenterGlow = v; save(); renderControlCenter(); })),
+    row('Panel scale', null, slider(90, 115, 1, Math.round((S.controlCenterScale || 1) * 100), v => { S.controlCenterScale = v / 100; renderControlCenter(); }, v => { S.controlCenterScale = v / 100; save(); renderControlCenter(); })),
+    button('Reset appearance', () => { for (const k of ['controlCenterDensity', 'controlCenterShape', 'controlCenterAccent', 'controlCenterGlow', 'controlCenterScale']) delete S[k]; save(); renderControlCenter(); openControlCenterSettings(); }),
+  ]);
 }
 
 /** Windows shortcuts Haven answers instead of Windows (see SwitcherHook.cs). */

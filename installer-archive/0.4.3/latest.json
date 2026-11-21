@@ -1,0 +1,6 @@
+{
+    "version":  "0.4.3",
+    "url":  "Haven-0.4.3-win-x64.zip",
+    "sha256":  "C3683E526B7ACEF57891D0D2980FBADA8C1EA05D17DC01B06BFF75A1FE11F3FE",
+    "notes":  "Settings persistence fix: Haven no longer re-saves default settings when the saved settings file is missing or unreadable at startup. Includes the SIGNAL Audio Deck and Control Center customization."
+}

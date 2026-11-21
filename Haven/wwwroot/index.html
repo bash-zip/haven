@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Haven</title>
+  <link rel="stylesheet" href="fonts.css">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="deep.css">
 </head>
@@ -12,6 +13,8 @@
   <svg id="lg-defs" width="0" height="0" style="position:absolute" aria-hidden="true"><defs></defs></svg>
   <div id="wallpaper"></div>
   <div class="desktop-icons" id="desktop-icons"></div>
+  <div class="boot-splash" id="boot-splash" hidden aria-hidden="true"><img class="boot-mark" src="rose-logo.png" alt="Haven"><div class="boot-caption">A CALMER DESKTOP</div><div class="boot-progress"><i></i></div></div>
+  <div class="hud-overlay" id="hud-overlay" hidden aria-hidden="true"><div class="hud-corner hud-tl"></div><div class="hud-corner hud-tr"></div><div class="hud-corner hud-bl"></div><div class="hud-corner hud-br"></div><div class="hud-readout" id="hud-readout"></div><div class="hud-pointer" id="hud-pointer"></div></div>
 
   <!-- ===== Menu bar ===== -->
   <header class="menubar">
@@ -43,7 +46,10 @@
     <div class="status clock" id="menubar-clock"></div>
   </header>
 
-  <!-- Now-playing pill, centred at the top of the screen -->
+  <!-- Now-playing player pinned to the top of the screen -->
+  <span class="bar-player" id="bar-player" hidden></span>
+
+    <!-- Now-playing pill, centred at the top of the screen -->
   <div class="island" id="island" hidden>
     <span class="island-art" id="island-art"></span>
     <span class="island-title" id="island-title"></span>
@@ -55,17 +61,16 @@
     <span class="island-eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
   </div>
 
+  <!-- Media panel pulled down from the pill -->
+  <div class="overlay media-backdrop" id="media-panel" hidden>
+    <div class="media-panel" id="media-panel-box" role="dialog" aria-label="Now playing"></div>
+  </div>
+
   <!-- ===== Widgets ===== -->
   <aside class="widget-panel" id="widget-panel">
-    <div class="panel-head">
-      <span class="panel-label">Widgets</span>
-      <button class="edit-pill" id="edit-widgets">
-        <svg viewBox="0 0 16 16" width="10" height="10"><path d="M10.5 2.5l3 3L6 13H3v-3z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
-        <span>Edit widgets</span>
-      </button>
-    </div>
     <div class="hidden-widgets" id="hidden-widgets"></div>
     <div class="widget-grid" id="widget-grid">
+      <div class="widget-empty-state" id="widget-empty-state" hidden><b>Your desktop, your way.</b><span>Add a widget, then place it anywhere on screen.</span><button type="button" onclick="toShell('openWidgetGallery')">＋ Add widgets</button></div>
 
       <section class="widget wide" data-widget="batteries">
         <div class="w-head">
@@ -77,8 +82,25 @@
         <div class="battery-list" id="battery-list"></div>
       </section>
 
+      <section class="widget square network-widget" data-widget="network">
+        <div class="w-head"><span class="w-title">Network</span><span class="muted" id="net-state" style="font-size:10px"></span></div>
+        <div class="net-body">
+          <div class="net-name" id="net-name">—</div>
+          <div class="net-meta"><span id="net-type"></span><span class="net-bars" id="net-bars"></span></div>
+        </div>
+      </section>
+
+      <section class="widget tall clipboard-widget" data-widget="clipboard">
+        <div class="w-head"><span class="w-title">Clipboard</span><span class="muted" id="clip-widget-count" style="font-size:10px"></span></div>
+        <div class="clip-list" id="clip-list"></div>
+      </section>
+
       <section class="widget square clock-widget" data-widget="clock">
         <svg class="analog" id="analog" viewBox="0 0 200 200"></svg>
+        <div class="clock-digital" id="clock-digital" aria-live="off">
+          <div class="clock-digital-time" id="clock-digital-time"></div>
+          <div class="clock-digital-date" id="clock-digital-date"></div>
+        </div>
       </section>
 
       <section class="widget square calendar-widget" data-widget="calendar">
@@ -172,12 +194,30 @@
         <ul class="event-list" id="event-list"></ul>
       </section>
 
+      <section class="widget wide audio-deck-widget" data-widget="audiodeck">
+        <div class="w-head"><span class="w-title">SIGNAL / AUDIO</span><span class="audio-deck-meta" id="audio-deck-meta">LIVE FEED</span></div>
+        <div class="audio-deck-tabs" id="audio-deck-tabs"></div>
+        <div class="audio-deck-stage" id="audio-deck-stage"></div>
+        <div class="audio-deck-foot"><span id="audio-deck-track">NO SIGNAL</span><span id="audio-deck-clock">00:00</span></div>
+      </section>
+
+      <section class="widget wide signal-widget" data-widget="signal">
+        <div class="w-head"><span class="w-title">SIGNAL / 01</span><span class="signal-status" id="signal-status">STANDBY</span></div>
+        <div class="signal-tabs" id="signal-tabs"></div>
+        <div class="signal-stage" id="signal-stage"><canvas id="signal-canvas"></canvas></div>
+        <div class="signal-foot"><span id="signal-track">NO SIGNAL</span><div class="signal-controls"><button data-media="previous" aria-label="Previous track">|◀</button><button data-media="toggle" aria-label="Play or pause">▶</button><button data-media="next" aria-label="Next track">▶|</button></div></div>
+      </section>
+
+      <section class="widget wide cava-widget" data-widget="cava">
+        <div class="w-head"><span class="w-title">cava / DOT MATRIX</span><span class="signal-status">AUDIO REACTIVE</span></div>
+        <div class="cava-stage"><canvas id="cava-canvas"></canvas></div>
+      </section>
+
       <section class="widget wide viz-widget" data-widget="visualizer">
         <canvas class="viz-canvas" id="viz-canvas"></canvas>
         <div class="viz-label" id="viz-label"></div>
       </section>
 
-      <section class="widget wide tty-widget" data-widget="tty" tabindex="0"></section>
 
       <section class="widget square stocks-widget" data-widget="stocks">
         <div class="w-head"><span class="w-title">Stocks</span><span class="muted" id="stock-updated" style="font-size:10px"></span></div>
@@ -199,6 +239,12 @@
       <section class="widget square countdown-widget" data-widget="countdown">
         <div class="w-head"><span class="w-title" id="countdown-title">Countdown</span></div>
         <div class="countdown-body" id="countdown-body"></div>
+      </section>
+
+      <section class="widget square timer-widget" data-widget="timer">
+        <div class="w-head"><span class="w-title" id="timer-title">Timer</span><span class="muted" id="timer-state" style="font-size:10px"></span></div>
+        <div class="timer-display" id="timer-display">25:00</div>
+        <div class="timer-controls" id="timer-controls"></div>
       </section>
 
       <section class="widget square spacenote-widget" data-widget="spacenote">
@@ -281,8 +327,8 @@
     <div class="saver-clock"><div class="saver-time" id="saver-time"></div><div class="saver-date" id="saver-date"></div></div>
   </div>
 
-  <!-- Screenshot preview -->
-  <div class="shot-preview" id="shot-preview" hidden></div>
+  <!-- First-run onboarding (shell layer only) -->
+  <div class="overlay onboard" id="onboard" hidden></div>
 
   <!-- Lock screen (Ctrl + L) -->
   <div class="overlay lock" id="lock" hidden tabindex="-1">
@@ -310,6 +356,7 @@
   </div>
 
   <div class="context-menu" id="context-menu" hidden></div>
+  <button id="edit-done" type="button">Done arranging</button>
   <div class="toast" id="toast" hidden></div>
 
   <script src="app.js"></script>
@@ -325,9 +372,10 @@
   <script src="dock-extras.js"></script>
   <script src="viz.js"></script>
   <script src="widgets2.js"></script>
-  <script src="tty.js"></script>
+  <script src="signal.js"></script>
   <script src="deep.js"></script>
   <script src="perf.js"></script>
+  <script>document.getElementById("edit-done")?.addEventListener("click", () => toggleEditing(false));</script>
   <script src="secondary.js"></script>
 </body>
 </html>

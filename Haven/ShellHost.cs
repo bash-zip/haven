@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+using System.Diagnostics;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
@@ -16,7 +17,7 @@ sealed partial class ShellHost
     public const string DataHost = "data.haven.example";
 
     const int HotkeySearch = 1, HotkeyQuit = 2, HotkeyMissionControl = 3, HotkeyAppExpose = 4, HotkeyLock = 5,
-        HotkeyShotFull = 6, HotkeyShotRegion = 7, HotkeyWallpapers = 8;
+        HotkeyWallpapers = 8;
     bool _locked;
     const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2, MOD_NOREPEAT = 0x4000;
 
@@ -41,7 +42,7 @@ sealed partial class ShellHost
 
     DesktopLayer _desktop = null!;
     ShellLayer _shell = null!;
-    AppBar? _topBar, _bottomBar;
+    AppBar? _topBar, _bottomBar, _leftBar, _rightBar;
     readonly GlassPlates _glass = new();
     Native.RECT? _dockRect;
     bool? _dockOverlap;
@@ -50,6 +51,10 @@ sealed partial class ShellHost
     readonly DispatcherTimer _watch = new() { Interval = TimeSpan.FromMilliseconds(800) };
     bool _quitting;
     bool _wantTaskbarHidden;
+    /// <summary>True once StartAsync finished wiring every layer. Explorer-restart and
+    /// display-change events can arrive long before that (Explorer still loading at sign-in),
+    /// and touching the not-yet-built layers there crashed the whole desktop.</summary>
+    bool _booted;
 
     public async Task StartAsync()
     {
@@ -57,11 +62,16 @@ sealed partial class ShellHost
         Taskbar.Restore();
         WindowsGestures.Restore();
         StageManager.RecoverFromDisk();
+        // Pictures/settings stranded in a packaged app's redirected copy of our folder.
+        await PackagedCopy.RecoverAsync();
         _wantTaskbarHidden = ReadSetting("hideTaskbar", true);
         if (_wantTaskbarHidden) HideTaskbar();
 
         // Interface sounds (and the startup chime) play without waiting for a click.
-        var options = new CoreWebView2EnvironmentOptions("--autoplay-policy=no-user-gesture-required");
+        var args = "--autoplay-policy=no-user-gesture-required";
+        // Developer switch: a ".debug" file next to the project opens the web views' debugging port.
+        if (Updater.IsDevBuild && File.Exists(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".debug"))) args += " --remote-debugging-port=9333";
+        var options = new CoreWebView2EnvironmentOptions(args);
         var env = await CoreWebView2Environment.CreateAsync(null, Paths.WebViewData, options);
 
         _desktop = new DesktopLayer();
@@ -104,6 +114,7 @@ sealed partial class ShellHost
             var data = new { b, w, beat };
             if (_audioParts.Contains("desktop")) Emit("desktop", "audio", data);
             if (_audioParts.Contains("shell")) Emit("shell", "audio", data);
+            if (_audioParts.Contains("island")) Emit("island", "audio", data);
         };
         if (ReadSetting("clipboardHistory", true)) ClipboardHistory.Start(_desktop.Handle);
         if (ReadSetting("trayIcons", true)) Tray.Start();
@@ -117,6 +128,7 @@ sealed partial class ShellHost
         _watch.Start();
         _corners.Tick += (_, _) => { CheckCorners(); Touchpad.CheckTimeout(); };
         _corners.Start();
+        _booted = true;
     }
 
     void Configure(CoreWebView2 core, string part)
@@ -151,7 +163,12 @@ sealed partial class ShellHost
             core.NavigationCompleted += (_, _) => { foreach (var n in _notices) Emit("shell", "notice", n); };
 
         var query = part.StartsWith("secondary") ? $"part=secondary&screen={part["secondary".Length..]}" : $"part={part}";
-        core.Navigate($"https://{AppHost}/index.html?{query}");
+        // Cache-bust with the app version: after an update the pages must never come from
+        // WebView2's cache, or users keep running the old UI and report "the fix didn't land".
+        // Cache-bust on the build timestamp, not the version — rebuilding the same version
+// must still give the pages a different URL or WebView2 serves the stale cached UI.
+var buildStamp = File.GetLastWriteTimeUtc(typeof(ShellHost).Assembly.Location).Ticks;
+core.Navigate($"https://{AppHost}/index.html?{query}&v={buildStamp}");
     }
 
     static readonly Dictionary<string, string> ContentTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -250,7 +267,11 @@ sealed partial class ShellHost
     // ----- Shell layer -----
 
     public void SetShellRegion(bool full, IReadOnlyList<Native.RECT> rects) => _shell.SetRegion(full, rects);
-    public void SetGlass(IReadOnlyList<GlassPlates.Plate> plates) => _glass.Set(plates, _shell.Handle);
+    public void SetGlass(IReadOnlyList<GlassPlates.Plate> plates, uint? tint = null)
+    {
+        if (tint is uint t) _glass.SetTint(t);
+        _glass.Set(plates, _shell.Handle);
+    }
 
     /// <summary>Where the Dock is (physical pixels), so we can tell when a window overlaps it.</summary>
     public void SetDockRect(Native.RECT? rect)
@@ -328,25 +349,41 @@ sealed partial class ShellHost
     }
     public void SetShellInteractive(bool on) => _shell.SetInteractive(on);
 
-    public void Reserve(int top, int bottom)
+    public void Reserve(int top, int bottom, int left = 0, int right = 0)
     {
         _topBar?.SetThickness(top);
         _bottomBar?.SetThickness(bottom);
+        // Side Docks reserve their own edge; the bars are created only while needed.
+        if (left > 0) { _leftBar ??= new AppBar(AppBar.Left); _leftBar.Register(); _leftBar.SetThickness(left); }
+        else if (_leftBar is { Registered: true }) _leftBar.SetThickness(0);
+        if (right > 0) { _rightBar ??= new AppBar(AppBar.Right); _rightBar.Register(); _rightBar.SetThickness(right); }
+        else if (_rightBar is { Registered: true }) _rightBar.SetThickness(0);
     }
 
     public void SetZoom(string part, double zoom)
     {
         zoom = Math.Clamp(zoom, 0.5, 2.5);
-        if (part == "shell") _shell.SetZoom(zoom);
-        else _desktop.Web.ZoomFactor = zoom;
+        if (part == "shell")
+        {
+            if (_shell == null) return; // page booted before the layers did
+            _shell.SetZoom(zoom);
+        }
+        else
+        {
+            if (_desktop == null) return;
+            _desktop.Web.ZoomFactor = zoom;
+        }
     }
 
     /// <summary>Explorer rebuilt the taskbar: hide it again and re-reserve the menu bar and Dock space.</summary>
     void OnExplorerRestarted()
     {
+        if (!_booted || _shell == null) return; // still starting up: HideTaskbar below already covers us
         if (_wantTaskbarHidden) { Taskbar.Restore(); HideTaskbar(); }
         _topBar?.Register();
         _bottomBar?.Register();
+        _leftBar?.Register();
+        _rightBar?.Register();
         foreach (var sc in _secondaries) sc.Reregister();
         _desktop.SendToBottom();
         _shell.Reshow();
@@ -396,8 +433,10 @@ sealed partial class ShellHost
         if (covered != _desktopCovered)
         {
             _desktopCovered = covered;
-            Emit("desktop", "covered", covered);
+            Emit("desktop", "covered", new { covered, full = fullScreenApp });
             Emit("shell", "covered", fullScreenApp);
+            // Note: the pill layer does NOT hide for "covered" — a maximized window is the
+            // normal desktop state, and the pill is topmost precisely to sit above it.
             try
             {
                 _desktop.Web.CoreWebView2.MemoryUsageTargetLevel = covered ? CoreWebView2MemoryUsageTargetLevel.Low : CoreWebView2MemoryUsageTargetLevel.Normal;
@@ -430,7 +469,7 @@ sealed partial class ShellHost
     [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
     static extern int DwmGetWindowAttribute(IntPtr h, int attr, out Native.RECT value, int size);
 
-    static bool IsShellWindow(IntPtr h)
+    internal static bool IsShellWindow(IntPtr h)
     {
         var sb = new System.Text.StringBuilder(64);
         GetClassName(h, sb, sb.Capacity);
@@ -443,6 +482,7 @@ sealed partial class ShellHost
 
     void OnDisplayChanged()
     {
+        if (!_booted || _shell == null || _desktop == null) return; // events can beat the layers into existence
         _ = SyncDisplaysAsync();
         _desktop.FitToMonitor();
         _desktop.SendToBottom();
@@ -473,9 +513,7 @@ sealed partial class ShellHost
         // Mission Control and App Exposé, as on a Mac.
         Reg("Ctrl + Up (Overview)", HotkeyMissionControl, MOD_CONTROL, 0x26);
         Reg("Ctrl + Down (App Windows)", HotkeyAppExpose, MOD_CONTROL, 0x28);
-        // Screenshots, as on a Mac (with Ctrl in place of Cmd).
-        Reg("Ctrl + Shift + 3 (screenshot)", HotkeyShotFull, MOD_CONTROL | SHIFT, 0x33);
-        Reg("Ctrl + Shift + 4 (area screenshot)", HotkeyShotRegion, MOD_CONTROL | SHIFT, 0x34);
+
         Reg("Ctrl + Alt + W (wallpaper switcher)", HotkeyWallpapers, MOD_CONTROL | MOD_ALT, 0x57);
         if (!Reg("Ctrl + L (lock)", HotkeyLock, MOD_CONTROL, 0x4C))
             _notices.Add("Ctrl + L is taken by another app. Lock Haven from the Windows-logo menu instead.");
@@ -486,6 +524,7 @@ sealed partial class ShellHost
 
     void OnHotkey(int id)
     {
+        if (!_booted) return; // hotkeys register before the layers exist; early presses must not crash startup
         if (id == HotkeySearch)
         {
             _shell.SetInteractive(true);
@@ -495,20 +534,16 @@ sealed partial class ShellHost
         else if (id == HotkeyMissionControl) _ = ShowMissionControlAsync(null);
         else if (id == HotkeyAppExpose) _ = ShowAppExposeAsync();
         else if (id == HotkeyLock && !_locked) { SetLocked(true); Emit("shell", "lock"); }
-        else if (id == HotkeyShotFull) TakeScreenshot(region: false);
         else if (id == HotkeyWallpapers) { _shell.SetInteractive(true); Emit("shell", "wallpaperSwitcher"); }
-        else if (id == HotkeyShotRegion) TakeScreenshot(region: true);
         else if (WindowSnap.Shortcuts.FirstOrDefault(s => s.Id == id) is { Where: not null } snap) Snap(snap.Where);
     }
 
     /// <summary>A Windows shortcut (Start, Task View, Search…) that Haven answers instead.</summary>
     void OnWindowsShortcut(string action)
     {
-        if (_locked || _quitting) return;
+        if (!_booted || _locked || _quitting) return;
         if (action == "none") return;
         if (action == "mission") { _ = ShowMissionControlAsync(null); return; }
-        if (action == "shotFull") { TakeScreenshot(region: false); return; }
-        if (action == "shotRegion") { TakeScreenshot(region: true); return; }
         if (action.StartsWith("snap:")) { Snap(action[5..]); return; }
         if (action is "launchpad" or "search" or "settings" or "logo" or "notifications" or "control") _shell.SetInteractive(true);
         Emit("shell", "shortcut", action);
@@ -624,7 +659,7 @@ sealed partial class ShellHost
     /// <summary>Trackpad: the slide follows the fingers, then settles or springs back.</summary>
     void OnPan(string phase, double dx, double velocity)
     {
-        if (_slide == null) return;
+        if (_slide == null || !_booted) return;
         const double FullSwipe = 0.32; // finger travel (fraction of the pad) for a whole screen
         switch (phase)
         {
@@ -655,25 +690,6 @@ sealed partial class ShellHost
         int i = exe == null ? -1 : _swipeOrder.FindIndex(o => o.Exe == exe);
         int j = i < 0 ? (dir > 0 ? 0 : _swipeOrder.Count - 1) : i + dir;
         return j >= 0 && j < _swipeOrder.Count ? new IntPtr(_swipeOrder[j].Hwnd) : IntPtr.Zero;
-    }
-
-    // ----- Screenshots -----
-
-    public void TakeScreenshot(bool region)
-    {
-        Screenshots.Destination = ReadString("screenshotSave", "pictures");
-        void Saved(string? path, System.Windows.Media.Imaging.BitmapSource image)
-        {
-            // A copy the menu bar can show as a little preview.
-            var dir = Path.Combine(Paths.Public, "screens");
-            Directory.CreateDirectory(dir);
-            foreach (var old in Directory.GetFiles(dir).Where(f => File.GetCreationTime(f) < DateTime.Now.AddDays(-1)))
-                try { File.Delete(old); } catch { }
-            var copy = Path.Combine(dir, Guid.NewGuid().ToString("N") + ".png");
-            try { Screenshots.WritePng(image, copy); } catch { }
-            Emit("shell", "screenshot", new { path, url = Paths.Url(copy) });
-        }
-        if (region) Screenshots.Region(Saved); else Screenshots.FullScreen(Saved);
     }
 
     // ----- Stage Manager -----
@@ -751,6 +767,22 @@ sealed partial class ShellHost
 
     // ----- Lifetime -----
 
+    /// <summary>Exits and starts a fresh Haven, for the logo-menu "Restart Haven" item.
+    /// A detached helper waits for this process to die (releasing the single-instance
+    /// mutex) before launching the new copy.</summary>
+    public void Restart()
+    {
+        var exe = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(exe)) { Quit(); return; }
+        Process.Start(new ProcessStartInfo("cmd.exe", $"/c timeout /t 2 /nobreak > nul & start \"\" \"{exe}\"")
+        {
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            WindowStyle = ProcessWindowStyle.Hidden,
+        });
+        Quit();
+    }
+
     public void Quit()
     {
         if (_quitting) return;
@@ -770,6 +802,8 @@ sealed partial class ShellHost
         Native.UnregisterHotKey(_desktop.Handle, HotkeyQuit);
         _topBar?.Dispose();
         _bottomBar?.Dispose();
+        _leftBar?.Dispose();
+        _rightBar?.Dispose();
         Taskbar.Restore();
         WindowsGestures.Restore();
         Desktop.Dispose();

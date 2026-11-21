@@ -9,7 +9,7 @@ namespace Haven;
 /// <summary>
 /// Updates for an installed Haven.
 ///
-/// Releases publish a small manifest (latest.json: version, download url, SHA-256, notes). Haven
+/// Releases publish a small manifest (latest.json: version, download url, SHA-256, notes). I
 /// checks it, downloads the zip, verifies the checksum, unpacks it, then swaps the files in after
 /// it closes and starts the new version. The manifest's address ships with each release in
 /// update-feed.txt (release.ps1 writes it). A development install can instead point the feed at a

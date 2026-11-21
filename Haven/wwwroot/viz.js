@@ -8,7 +8,9 @@
    visualizer screen saver. Styles: bars, mirror, dots, wave, radial, blob, line.
    ========================================================================= */
 
-const VIZ_STYLES = [['bars', 'Bars'], ['mirror', 'Mirror'], ['dots', 'Dots (cava)'], ['wave', 'Waveform'], ['radial', 'Radial'], ['blob', 'Blob'], ['line', 'Spectrum']];
+// Styles offered everywhere. 'Wave' (spectrum line) stayed; the separate waveform style was
+// retired from the pickers — it still renders for the Audio Deck's Waveform view.
+const VIZ_STYLES = [['bars', 'Bars'], ['mirror', 'Mirror'], ['dots', 'Dots (cava)'], ['radial', 'Radial'], ['blob', 'Blob'], ['line', 'Wave']];
 const VIZ_COLORS = [['accent', 'Accent'], ['white', 'White'], ['ink', 'Paper & Ink'], ['sunset', 'Sunset'], ['ocean', 'Ocean'], ['rainbow', 'Rainbow'], ['neon', 'Neon']];
 
 const Viz = (() => {

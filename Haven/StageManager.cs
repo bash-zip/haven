@@ -7,7 +7,7 @@ using System.Windows.Media;
 namespace Haven;
 
 /// <summary>
-/// Stage Manager: the app you're using sits on stage; your other recent apps wait as live
+/// Stage Manager: the app you're using sits on stage; I keep your other recent apps waiting as live
 /// previews in a strip on the left. Click one to bring it on stage.
 ///
 /// Apps off stage are moved just beyond the right edge of the screen (so their previews stay live);
@@ -103,7 +103,7 @@ sealed class StageManager
         var p = new Parked(h.ToInt64(), exe, r.Left, r.Top, r.Right, r.Bottom, maximized, ++_order);
         _parked[p.Hwnd] = p;
         Save();
-        if (maximized) Native.ShowWindow(h, Native.SW_MINIMIZE);
+        if (maximized) { WindowAnimator.Skip(h); Native.ShowWindow(h, Native.SW_MINIMIZE); }
         else
         {
             var m = Native.PrimaryMonitor();
@@ -118,7 +118,7 @@ sealed class StageManager
         _parked.Remove(p.Hwnd);
         Save();
         if (!IsWindow(h)) return;
-        if (p.Minimized) Native.ShowWindow(h, Native.SW_RESTORE);
+        if (p.Minimized) { WindowAnimator.Skip(h); Native.ShowWindow(h, Native.SW_RESTORE); }
         else Native.SetWindowPos(h, IntPtr.Zero, p.L, p.T, 0, 0, Native.SWP_NOSIZE | Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
     }
 
@@ -150,7 +150,7 @@ sealed class StageManager
             {
                 var h = new IntPtr(p.Hwnd);
                 if (!IsWindow(h)) continue;
-                if (p.Minimized) Native.ShowWindow(h, Native.SW_RESTORE);
+                if (p.Minimized) { WindowAnimator.Skip(h); Native.ShowWindow(h, Native.SW_RESTORE); }
                 else Native.SetWindowPos(h, IntPtr.Zero, p.L, p.T, 0, 0, Native.SWP_NOSIZE | Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
             }
             File.Delete(StateFile);

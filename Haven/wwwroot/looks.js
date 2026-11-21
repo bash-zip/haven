@@ -13,13 +13,15 @@ Object.assign(WAVE_PALETTES, {
 });
 
 /** Everything that makes up how Haven looks (not your apps, widgets or data). */
-const LOOK_KEYS = ['theme', 'accent', 'wallpaper', 'dynamicWallpaper', 'glass', 'glassStyle', 'refraction', 'glassTint',
-  'customSurface', 'iconStyle', 'widgetStyle', 'widgetTint', 'dockSize', 'magnify', 'iconOverrides', 'customCss', 'island', 'visualizer'];
+const LOOK_KEYS = ['theme', 'accent', 'wallpaper', 'wallpaperFit', 'wallpaperX', 'wallpaperY', 'dynamicWallpaper', 'glass', 'glassStyle', 'refraction', 'glassTint',
+  'customSurface', 'iconStyle', 'widgetStyle', 'widgetTint', 'widgetSize', 'islandPos', 'liveWallpaper', 'desktopClockFace', 'desktopClock24', 'desktopClockSeconds', 'desktopClockDate', 'desktopClockAlign', 'desktopClockSize', 'desktopClockColor', 'desktopClockTracking', 'widgetDesign', 'widgetDesignColor', 'widgetDesignCustomColor', 'dockSize', 'magnify', 'iconOverrides', 'customCss', 'island', 'visualizer',
+  'deepDotUi', 'lockClockStyle', 'lockLayout', 'deepFont', 'deepTitles', 'deepCorners', 'deepCornerSize', 'deepControls', 'deepControlsSide', 'deepBorder', 'deepBorderWidth', 'deepShadow', 'deepMotion', 'fxGrain', 'fxScanlines', 'fxHud', 'fxLed', 'audioDeckView', 'audioDeckStyle', 'audioDeckVizStyle', 'audioDeckMetadata', 'controlCenterDensity', 'controlCenterShape', 'controlCenterAccent', 'controlCenterGlow', 'controlCenterScale'];
 
 const PRESET_LOOKS = [
   { id: 'sonoma', name: 'Sunset Hills', look: { theme: 'glass', accent: 'orange', wallpaper: 'sonoma', glass: true, glassStyle: 'liquid', refraction: 60, glassTint: 0.35, iconStyle: 'default', widgetStyle: 'glass' } },
   { id: 'monterey', name: 'Violet Bay', look: { theme: 'dark', accent: 'purple', wallpaper: 'monterey', glass: true, glassStyle: 'liquid', refraction: 55, glassTint: 0.45, iconStyle: 'default', widgetStyle: 'glass' } },
   { id: 'graphite', name: 'Graphite', look: { theme: 'black', accent: 'slate', wallpaper: 'graphite', glass: true, glassStyle: 'frosted', refraction: 30, glassTint: 0.6, iconStyle: 'dark', widgetStyle: 'glass' } },
+  { id: 'red-dot', name: 'Red Dot', look: { theme: 'black', accent: '#e5483a', wallpaper: 'matrix', glass: false, glassStyle: 'frosted', iconStyle: 'dark', widgetStyle: 'solid', deepDotUi: true, lockClockStyle: 'dots', desktopClockFace: 'dots', deepCorners: 'sharp', deepCornerSize: 0, deepControls: 'signal', deepBorder: 'hairline', deepShadow: 'none', deepMotion: 'dots', deepFont: 'mono', deepTitles: 'caps', widgetDesign: 'dot', widgetDesignColor: 'white' } },
   { id: 'dune', name: 'Dune', look: { theme: 'sand', accent: 'champagne', wallpaper: 'dune', glass: true, glassStyle: 'liquid', refraction: 45, glassTint: 0.5, iconStyle: 'default', widgetStyle: 'glass' } },
   { id: 'ember', name: 'Ember', look: { theme: 'burgundy', accent: 'burgundy', wallpaper: 'ember', glass: true, glassStyle: 'liquid', refraction: 60, glassTint: 0.5, iconStyle: 'default', widgetStyle: 'glass' } },
 ];
@@ -34,6 +36,7 @@ function applyLook(look) {
   for (const k of LOOK_KEYS) if (look[k] !== undefined) S[k] = structuredClone(look[k]);
   save();
   applyTheme();
+  applyDeep?.();
   applyCustomization?.();
   applyWallpaper();
   applyScale();

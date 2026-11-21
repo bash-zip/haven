@@ -8,7 +8,7 @@ public sealed record AppEntry(string Id, string Name, string? Icon, string? Exe,
 
 /// <summary>
 /// Lists installed apps the same way the Start menu does, by reading the shell's AppsFolder.
-/// That covers classic desktop programs and Store apps alike.
+/// That covers both classic desktop programs and Store apps.
 /// </summary>
 public sealed class AppCatalog
 {
@@ -40,7 +40,7 @@ public sealed class AppCatalog
         Process.Start(new ProcessStartInfo("explorer.exe", $"shell:AppsFolder\\{id}") { UseShellExecute = true });
     }
 
-    /// <summary>The program file behind an app, when it's a classic desktop app (null for Store apps).</summary>
+    /// <summary>The program file behind an app when it's a classic desktop app (null for Store apps).</summary>
     public static string? ResolveExe(string id)
     {
         if (Instance?._byId.TryGetValue(id, out var entry) == true && entry.Target != null) return entry.Target;
@@ -79,7 +79,7 @@ public sealed class AppCatalog
             var iconFile = Path.Combine(Paths.Icons, Paths.Hash(path) + ".png");
             var icon = ShellIcons.TrySave("shell:AppsFolder\\" + path, iconFile) ? Paths.Url(iconFile) : null;
             // Entries like "Microsoft.VisualStudioCode" hide the real program behind a Start menu shortcut;
-            // its target tells us which running windows (Code.exe) belong to this app.
+            // Use its target to figure out which running windows (Code.exe) belong to this app.
             string? target = path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? path : null;
             if (target == null)
             {

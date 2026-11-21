@@ -4,9 +4,9 @@ using System.Text.Json.Nodes;
 namespace Haven;
 
 /// <summary>
-/// Haven's settings file (state.json): the one place every page's settings end up.
+/// Haven's settings file (state.json): the one place I keep every page's settings.
 ///
-/// Pages send only what they changed ("patches"); this merges them, so two pages saving at the
+/// Pages send me only what changed ("patches"); I merge them so two pages saving at the
 /// same moment can't overwrite each other. Every write goes to a temporary file first and is
 /// then swapped in, so a crash mid-write can't leave a broken file. A backup is kept (refreshed
 /// at most every ten minutes, plus a daily one), and if the file is ever unreadable Haven starts
@@ -73,19 +73,37 @@ static class StateStore
             }
         }
         catch { /* a backup failing must never stop the save */ }
-        File.Move(tmp, Paths.State, overwrite: true);
+        for (int attempt = 0; ; attempt++)
+        {
+            try { File.Move(tmp, Paths.State, overwrite: true); break; }
+            catch (IOException) when (attempt < 20) { await Task.Delay(100); } // briefly locked by another program
+            catch (UnauthorizedAccessException) when (attempt < 20) { await Task.Delay(100); }
+        }
     }
 
     static JsonObject? ReadBest()
     {
         foreach (var file in Candidates())
         {
-            try
+            if (!File.Exists(file)) continue;
+            // A file that's briefly locked (antivirus, a backup tool, the previous Haven still
+            // closing) is not a broken file: wait and retry rather than falling back to an older
+            // backup, which would quietly undo recent changes.
+            for (int attempt = 0; attempt < 20; attempt++)
             {
-                if (!File.Exists(file)) continue;
-                if (JsonNode.Parse(File.ReadAllText(file)) is JsonObject o && o.Count > 0) return o;
+                try
+                {
+                    if (JsonNode.Parse(File.ReadAllText(file)) is JsonObject o && o.Count > 0)
+                    {
+                        if (file != Paths.State) Log.Info($"Settings file unreadable; started from backup {Path.GetFileName(file)}");
+                        return o;
+                    }
+                    break; // empty: try the next candidate
+                }
+                catch (IOException) { Thread.Sleep(150); }
+                catch (UnauthorizedAccessException) { Thread.Sleep(150); }
+                catch (Exception e) { Log.Info($"Settings file {Path.GetFileName(file)} is damaged ({e.Message})"); break; }
             }
-            catch { /* damaged: try the next backup */ }
         }
         return null;
     }

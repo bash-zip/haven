@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- HavenSetup.exe: one file that carries the whole Haven release and runs the
+       custom installer UI (raw Win32 host window + embedded WebView2 page — no WinForms). -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>HavenSetup</AssemblyName>
+    <RootNamespace>HavenSetup</RootNamespace>
+    <Version>0.5.1</Version>
+    <Product>Haven</Product>
+    <Description>Haven setup</Description>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebuggerSupport>false</DebuggerSupport>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <ApplicationIcon>haven.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+    <!-- release.ps1 puts the release zip here before publishing this project. -->
+    <EmbeddedResource Include="payload.zip" LogicalName="payload.zip" Condition="Exists('payload.zip')" />
+    <EmbeddedResource Include="ui\index.html" LogicalName="ui.index.html" />
+    <EmbeddedResource Include="ui\app.css" LogicalName="ui.app.css" />
+    <EmbeddedResource Include="ui\app.js" LogicalName="ui.app.js" />
+    <EmbeddedResource Include="ui\rose.png" LogicalName="ui.rose.png" />
+    <EmbeddedResource Include="ui\fonts\sora-400.woff2" LogicalName="ui.fonts.sora-400.woff2" />
+    <EmbeddedResource Include="ui\fonts\sora-500.woff2" LogicalName="ui.fonts.sora-500.woff2" />
+    <EmbeddedResource Include="ui\fonts\sora-700.woff2" LogicalName="ui.fonts.sora-700.woff2" />
+  </ItemGroup>
+</Project>
